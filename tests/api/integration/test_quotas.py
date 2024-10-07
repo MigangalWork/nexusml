@@ -128,10 +128,9 @@ def _test_org_quota_limit(client: MockClient, quota: str, request_json: dict):
         endpoint_url = org_endpoint + '/' + dsp_name
 
     if dsp_name == 'users':
-        endpoint_url = get_endpoint(parameterized_endpoint=ENDPOINT_MYACCOUNT)
-        response = client.send_request(method='GET', url=endpoint_url, json=request_json)
-    else:
-        response = client.send_request(method='POST', url=endpoint_url, json=request_json)
+        endpoint_url = get_endpoint(parameterized_endpoint=ENDPOINT_USERS)
+
+    response = client.send_request(method='POST', url=endpoint_url, json=request_json)
 
     # Verify response and database
     assert response.status_code == HTTP_UNPROCESSABLE_ENTITY_STATUS_CODE

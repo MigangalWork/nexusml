@@ -353,6 +353,8 @@ class DBModel(db.Model):
             depth += 1
             for relationship in db_object.relationships():
                 rel_attr = getattr(db_object, relationship)
+                if not rel_attr:
+                    continue
                 if isinstance(rel_attr, AppenderQuery):
                     continue  # don't force loading of relationships configured with `lazy="dynamic"`
                 if isinstance(rel_attr, Iterable):

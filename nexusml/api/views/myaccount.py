@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Optional
 
 from flask import g
 from flask import jsonify
@@ -9,7 +9,8 @@ from flask_apispec import use_kwargs
 import jwt
 from marshmallow import fields
 
-from nexusml.api.resources.base import collaborators_permissions
+from nexusml.api.external.auth0 import Auth0Manager
+from nexusml.api.resources.base import collaborators_permissions, DuplicateResourceError
 from nexusml.api.resources.base import dump
 from nexusml.api.resources.base import ResourceNotFoundError
 from nexusml.api.resources.base import users_permissions
@@ -24,12 +25,10 @@ from nexusml.api.schemas.myaccount import ClientSettingsResponseSchema
 from nexusml.api.schemas.myaccount import MyAccountRolesSchema
 from nexusml.api.schemas.myaccount import NotificationSchema
 from nexusml.api.schemas.myaccount import SettingsSchema
-from nexusml.api.schemas.organizations import OrganizationPermissionsPage
+from nexusml.api.schemas.organizations import OrganizationPermissionsPage, UserRequestSchema
 from nexusml.api.schemas.organizations import OrganizationResponseSchema
 from nexusml.api.schemas.organizations import UserResponseSchema
 from nexusml.api.schemas.organizations import UserUpdateSchema
-from nexusml.api.utils import get_auth0_management_api_token
-from nexusml.api.utils import get_auth0_user_data
 from nexusml.api.views.base import create_view
 from nexusml.api.views.common import paginated_response
 from nexusml.api.views.common import permissions_jsons
@@ -80,90 +79,25 @@ class MyAccountView(_MyAccountView):
         Returns:
             User: The user object associated with the authentication token.
         """
-        # TODO: Check this try except (except is a good path). Non exception logic should not be inside an except.
+        parents: Optional[list] = None
         try:
             user_db_object: UserDB = agent_from_token()
-        except jwt.InvalidTokenError as token_error:
-            mgmt_api_access_token = get_auth0_management_api_token()
-            auth0_user_data: dict = get_auth0_user_data(access_token=mgmt_api_access_token,
-                                                        auth0_id_or_email=g.user_auth0_id)
-            user_invitation: InvitationDB = self._get_user_invitation(token_error=token_error,
-                                                                      email=auth0_user_data['email'])
-            new_user: User = self._create_new_user_from_invitation(user_invitation=user_invitation,
-                                                                   user_auth0_id=auth0_user_data['user_id'])
-            return new_user
+        except jwt.InvalidTokenError:
+            raise ResourceNotFoundError()
 
-        organization = Organization.get(agent=user_db_object,
-                                        db_object_or_id=user_db_object.organization,
-                                        check_permissions=False)
+        try:
+            organization = Organization.get(agent=user_db_object,
+                                            db_object_or_id=user_db_object.organization,
+                                            check_permissions=False)
+            parents = [organization]
+        except Exception:
+            pass
+
         return User.get(agent=user_db_object,
                         db_object_or_id=user_db_object,
-                        parents=[organization],
+                        parents=parents,
                         check_permissions=False,
                         check_parents=False)
-
-    def _get_user_invitation(self, token_error: jwt.InvalidTokenError, email: str) -> InvitationDB:
-        """
-        Retrieves the user invitation from the database based on the Auth0 user data.
-
-        This function fetches an Auth0 management API token and uses it to obtain user data
-        either by Auth0 ID or email. It then queries the database for a pending user
-        invitation corresponding to the email found in the Auth0 user data. If no such
-        invitation is found, it raises the provided token error.
-
-        Args:
-            token_error (jwt.InvalidTokenError): The error to raise if the user invitation is not found.
-
-        Returns:
-            InvitationDB: The user invitation if found.
-
-        Raises:
-            jwt.InvalidTokenError: If the user invitation is not found.
-        """
-        user_invitation: InvitationDB = InvitationDB.query().filter_by(email=email, status=InviteStatus.PENDING).first()
-        if not user_invitation:
-            raise token_error
-
-        return user_invitation
-
-    def _create_new_user_from_invitation(self, user_invitation: InvitationDB, user_auth0_id: str) -> User:
-        """
-        Creates a new user from the provided user invitation.
-
-        This function checks for an existing admin user in the same organization as the
-        user invitation since an admin user is needed to create another user.
-        It then creates a new user using the email from the user invitation
-        and associates it with the organization. The status of the user invitation is
-        updated to accepted and saved to the database.
-
-        Args:
-            user_invitation (InvitationDB): The user invitation to create a new user from.
-
-        Returns:
-            User: The newly created user.
-        """
-        admin_user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
-            RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(
-                UserDB.organization_id == user_invitation.organization_id,
-                RoleDB.name == ADMIN_ROLE,
-            ).first()
-
-        organization: Organization = Organization.get(agent=admin_user_db_obj,
-                                                      db_object_or_id=admin_user_db_obj.organization,
-                                                      check_permissions=False)
-
-        new_user = User()
-        new_user.post(agent=admin_user_db_obj,
-                      data={
-                          'email': user_invitation.email,
-                          'auth0_id': user_auth0_id
-                      },
-                      parents=[organization])
-
-        user_invitation.status = InviteStatus.ACCEPTED
-        save_to_db(user_invitation)
-
-        return new_user
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT])
     def delete(self):
@@ -185,11 +119,15 @@ class MyAccountView(_MyAccountView):
         """
         user: User = self._get_user_from_token()
         user_data: dict = user.dump(serialize=False)
+        user_data['hasOrganization'] = False
+        if user.parents():
+            user_data['hasOrganization'] = True
+
         if not user_data['email_verified']:
             return error_response(code=HTTP_FORBIDDEN_STATUS_CODE, message='Email not verified')
 
         response = jsonify(user_data)
-        response.headers['Location'] = user.url()
+        response.headers['Location'] = user.url(check_parents=False)
         return response
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT])
@@ -212,6 +150,64 @@ class MyAccountView(_MyAccountView):
         user: User = self._get_user_from_token()
         response: Response = process_post_or_put_request(agent=user.db_object(), resource_or_model=user, json=kwargs)
         return response
+
+    @doc(tags=[SWAGGER_TAG_MYACCOUNT])
+    def post(self):
+        existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
+        if existing_user_db_obj:
+            raise DuplicateResourceError(f'User already exists')
+
+        auth0_manager: Auth0Manager = Auth0Manager()
+        auth0_user_data: dict = auth0_manager.get_auth0_user_data(auth0_id_or_email=g.user_auth0_id)
+        user_email: str = auth0_user_data['email']
+        user_invitation: InvitationDB = InvitationDB.query().filter_by(email=user_email,
+                                                                       status=InviteStatus.PENDING).first()
+
+        if user_invitation:
+            self._create_new_user_from_invitation(user_invitation=user_invitation, user_auth0_id=g.user_auth0_id)
+
+        else:
+            user_db_obj: UserDB = UserDB(auth0_id=g.user_auth0_id)
+            save_to_db(user_db_obj)
+
+    def _create_new_user_from_invitation(self, user_invitation: InvitationDB, user_auth0_id: str) -> User:
+        """
+        Creates a new user from the provided user invitation.
+
+        This function checks for an existing admin user in the same organization as the
+        user invitation since an admin user is needed to create another user.
+        It then creates a new user using the email from the user invitation
+        and associates it with the organization. The status of the user invitation is
+        updated to accepted and saved to the database.
+
+        Args:
+            user_invitation (InvitationDB): The user invitation to create a new user from.
+
+        Returns:
+            User: The newly created user.
+        """
+        admin_user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
+            RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(
+            UserDB.organization_id == user_invitation.organization_id,
+            RoleDB.name == ADMIN_ROLE,
+        ).first()
+
+        organization: Organization = Organization.get(agent=admin_user_db_obj,
+                                                      db_object_or_id=admin_user_db_obj.organization,
+                                                      check_permissions=False)
+
+        new_user: User = User()
+        new_user.post(agent=admin_user_db_obj,
+                      data={
+                          'email': user_invitation.email,
+                          'auth0_id': user_auth0_id
+                      },
+                      parents=[organization])
+
+        user_invitation.status = InviteStatus.ACCEPTED
+        save_to_db(user_invitation)
+
+        return new_user
 
 
 class SettingsView(_MyAccountView):

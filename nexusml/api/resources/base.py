@@ -14,7 +14,7 @@ from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.exc import StatementError
 from sqlalchemy.inspection import inspect
 
-from nexusml.api.ext import cache
+from nexusml.api.external.ext import cache
 from nexusml.api.schemas.base import ResourceRequestSchema
 from nexusml.api.schemas.base import ResourceResponseSchema
 from nexusml.api.utils import API_DOMAIN
@@ -225,14 +225,15 @@ class Resource(ABC):
     def public_id(self) -> str:
         return self.db_object().public_id
 
-    def url(self) -> str:
+    def url(self, check_parents: bool = True) -> str:
         if self._url:
             return self._url
         api_url = config.get('server')['api_url']
         self._url = API_DOMAIN + api_url + self.location()
         url_params = [x for x in self.location().split('/') if x.startswith('<') and x.endswith('>')]
         assert len(url_params) > 0
-        assert len(self.parents()) == len(url_params) - 1
+        if check_parents:
+            assert len(self.parents()) == len(url_params) - 1
         if self.parents():
             for param, parent in zip(url_params[:-1], self.parents()):
                 self._url = self._url.replace(param, parent.uuid())

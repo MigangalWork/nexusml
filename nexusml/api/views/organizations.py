@@ -1,6 +1,7 @@
+import re
 from datetime import datetime
 import os
-from typing import List
+from typing import Dict, List, Optional
 
 from celery import shared_task
 from flask import current_app
@@ -14,7 +15,8 @@ from flask_apispec import use_kwargs
 from flask_mail import Message
 
 from nexusml.api.endpoints import ENDPOINT_CLIENT_API_KEY
-from nexusml.api.ext import mail
+from nexusml.api.external.ext import mail
+from nexusml.api.external.auth0 import Auth0Manager
 from nexusml.api.resources.base import dump
 from nexusml.api.resources.base import DuplicateResourceError
 from nexusml.api.resources.base import InvalidDataError
@@ -51,8 +53,6 @@ from nexusml.api.schemas.organizations import UserRolesResponseSchema
 from nexusml.api.schemas.organizations import UsersPage
 from nexusml.api.utils import config
 from nexusml.api.utils import decode_api_key
-from nexusml.api.utils import get_auth0_management_api_token
-from nexusml.api.utils import get_auth0_user_data
 from nexusml.api.views.base import create_view
 from nexusml.api.views.common import PermissionAssignmentView
 from nexusml.api.views.core import agent_from_token
@@ -139,56 +139,41 @@ def _update_task_copy_progress(task: TaskDB, progress: int):
 class OrganizationsView(_OrganizationsView):
 
     @staticmethod
-    def _set_organization(user_auth0_id: str, org_db_object: OrganizationDB) -> Organization:
+    def _set_organization(creator_user_db_obj: UserDB, org_db_object: OrganizationDB,
+                          copy_demo_tasks: bool) -> Organization:
         """
         Sets up an organization's basic configuration. It subscribes the organization to the Free Plan,
         creates predefined roles ("admin" and "maintainer"), and assigns the admin role to the user.
 
+        NOTE: these two roles ("admin" and "maintainer") are not taken into account for the maximum number
+              of roles offered by the Plan.
+
         Args:
-            user_auth0_id (str): Auth0 ID of the user creating the organization.
+            creator_user_db_obj (UserDB): Db object of user creating the organization.
             org_db_object (OrganizationDB): The organization database object.
 
         Returns:
             Organization: The organization object with the basic configuration set.
         """
-        ##############################
-        # Subscribe to the Free Plan #
-        ##############################
-        subscription = SubscriptionDB(organization_id=org_db_object.organization_id, plan_id=FREE_PLAN_ID)
-
-        #########################################################################################################
-        # Create "admin" and "maintainer" roles.                                                                #
-
-        # NOTE: these two roles are not taken into account for the maximum number of roles offered by the Plan. #
-        #########################################################################################################
+        # Create "admin" and "maintainer" roles.
         admin_role = RoleDB(organization_id=org_db_object.organization_id, name=ADMIN_ROLE, description='Administrator')
         maintainer_role = RoleDB(organization_id=org_db_object.organization_id,
                                  name=MAINTAINER_ROLE,
                                  description='Maintainer')
         save_to_db([admin_role, maintainer_role])
 
-        ###################################################################################
-        # Add the first user ( session user) to the organization and assign "admin" role #
-        ###################################################################################
-        user_db_obj: UserDB = UserDB(auth0_id=user_auth0_id, organization_id=org_db_object.organization_id)
-        save_to_db(user_db_obj)
+        # Assign the new organization to the user.
+        creator_user_db_obj.organization_id = org_db_object.organization_id
+        # Assign the "admin" role to the user.
+        creator_user_db_obj.roles.append(admin_role)
+        save_to_db(creator_user_db_obj)
 
-        # Assign "admin" role to session user_db_obj
-        user_db_obj.roles.append(admin_role)
-        save_to_db(admin_role)
-
-        # If user email's domain doesn't match organization's, delete the organization
-        # TODO: user email should be checked before creating the organization.
-        #       We are doing this way because we need a `session_agent` for creating the organization.
-        auth0_user_data: dict = User.download_auth0_user_data(auth0_id_or_email=user_db_obj.auth0_id)
-        if auth0_user_data['email'].split('@')[-1] != org_db_object.domain:
-            raise UnprocessableRequestError("Domains don't match")
-
-        # Update user count
+        # Subscribe to the Free Plan and update user count
+        subscription = SubscriptionDB(organization_id=org_db_object.organization_id, plan_id=FREE_PLAN_ID)
         subscription.num_users = 1
         save_to_db(subscription)
 
-        return Organization.get(agent=user_db_obj, db_object_or_id=org_db_object)
+        return Organization.get(agent=creator_user_db_obj, db_object_or_id=org_db_object)
 
     @doc(tags=[SWAGGER_TAG_ORGANIZATIONS])
     @use_kwargs(OrganizationPOSTRequestSchema, location='json')
@@ -204,56 +189,29 @@ class OrganizationsView(_OrganizationsView):
         Returns:
             Response: The response with the organization details and appropriate status code.
         """
-        # Check the number of organizations created so far. If the limit is reached, add user to the wait list.
-        max_num_orgs = config.get('limits')['organizations']['num_organizations']
-        if OrganizationDB.query().count() >= max_num_orgs:
-            try:
-                max_waitlist_len = config.get('limits')['organizations']['waitlist']
-                if WaitList.query().count() >= max_waitlist_len:
-                    oldest_entry = WaitList.query().order_by(WaitList.id_).first()
-                    delete_from_db(oldest_entry)
+        auth0_manager: Auth0Manager = Auth0Manager()
+        auth0_user_data: dict = auth0_manager.get_auth0_user_data(auth0_id_or_email=g.user_auth0_id)
 
-                mgmt_api_access_token = get_auth0_management_api_token()
-                auth0_user_data: dict = get_auth0_user_data(access_token=mgmt_api_access_token,
-                                                            auth0_id_or_email=g.user_auth0_id)
-                db_entry = WaitList(uuid=g.agent_uuid,
-                                    email=auth0_user_data['email'],
-                                    first_name=auth0_user_data['given_name'],
-                                    last_name=auth0_user_data['family_name'],
-                                    company=kwargs['name'])
-                save_to_db(db_entry)
-            except Exception:
-                pass
-            err_msg = ('System capacity exceeded due to unexpectedly high demand. '
-                       'We are working hard to scale our system to better serve you. '
-                       'In the meantime, you have been added to our wait list and '
-                       'will be notified as soon as we can accommodate your request.')
-            return error_response(code=HTTP_SERVICE_UNAVAILABLE, message=err_msg)
+        error_response_: Optional[Response] = self._check_organization_limit(auth0_user_data=auth0_user_data,
+                                                                             org_name=kwargs['name'])
+        if error_response_:
+            return error_response_
 
-        # Get user from token and check whether he/she belongs to another organization
-        if UserDB.get_from_uuid(g.agent_uuid) is not None:
-            raise DuplicateResourceError('You already belong to another organization')
-
-        # Check if the organization already exists
-        if OrganizationDB.get_from_id(kwargs['trn']) is not None:
-            raise DuplicateResourceError(f'Organization "{kwargs["trn"]}" already exists')
-
-        # Check organization's domain
-        if kwargs['domain'][:kwargs['domain'].rindex('.')] in GENERIC_DOMAINS:
-            raise UnprocessableRequestError('Generic domains like Gmail, Hotmail, Outlook, etc. are not supported')
-
-        # Reject logo image file
-        if 'logo' in kwargs:
-            raise UnprocessableRequestError('You must create the organization before uploading its logo')
+        user_db_obj: UserDB = agent_from_token()
+        self._organization_post_validations(user_db_obj=user_db_obj,
+                                            kwargs_dict=kwargs,
+                                            user_email=auth0_user_data['email'])
 
         # Save organization to database
         org_db_object = OrganizationDB(**kwargs)
         save_to_db(org_db_object)
 
-        # Set organization (subscription, admin user, predefined roles)
+        # Set organization (subscription, admin user, predefined roles, demo tasks)
         try:
-            organization = OrganizationsView._set_organization(user_auth0_id=g.user_auth0_id,
-                                                               org_db_object=org_db_object)
+            organization = OrganizationsView._set_organization(
+                creator_user_db_obj=user_db_obj,
+                org_db_object=org_db_object,
+                copy_demo_tasks=False)
         except Exception as e:
             delete_from_db(org_db_object)
             raise e
@@ -263,6 +221,79 @@ class OrganizationsView(_OrganizationsView):
         response.status_code = HTTP_POST_STATUS_CODE
         response.headers['Location'] = organization.url()
         return response
+
+    def _check_organization_limit(self, auth0_user_data: dict, org_name: str) -> Optional[Response]:
+        """
+        Checks whether the number of organizations has reached the configured limit. If the limit is exceeded,
+        it adds the current user to a waitlist. It also ensures the waitlist does not exceed a maximum size by
+        removing the oldest entry if necessary.
+
+        Returns:
+                A JSON response with a 503 status code when the system capacity has been exceeded.
+        """
+        max_num_orgs = config.get('limits')['organizations']['num_organizations']
+        if OrganizationDB.query().count() >= max_num_orgs:
+            try:
+                max_waitlist_len = config.get('limits')['organizations']['waitlist']
+                if WaitList.query().count() >= max_waitlist_len:
+                    oldest_entry = WaitList.query().order_by(WaitList.id_).first()
+                    delete_from_db(oldest_entry)
+
+                # TODO: Check this if g.token data have this data
+                db_entry = WaitList(uuid=g.agent_uuid,
+                                    email=auth0_user_data['email'],
+                                    first_name=auth0_user_data['given_name'],
+                                    last_name=auth0_user_data['family_name'],
+                                    company=org_name)
+                save_to_db(db_entry)
+            except Exception:
+                pass
+            err_msg = ('System capacity exceeded due to unexpectedly high demand. '
+                       'We are working hard to scale our system to better serve you. '
+                       'In the meantime, you have been added to our wait list and '
+                       'will be notified as soon as we can accommodate your request.')
+
+            return error_response(code=HTTP_SERVICE_UNAVAILABLE, message=err_msg)
+
+    def _organization_post_validations(self, user_db_obj: UserDB, kwargs_dict: dict, user_email: str):
+        """
+        The function ensures that the user is not already associated with another organization, that the
+        organization domain and TRN are valid, and rejects inappropriate logo uploads.
+
+        Args:
+            user_db_obj (UserDB): The user database object retrieved from the system for validation.
+            kwargs_dict (dict): A dictionary containing the organization data, such as domain, logo, and TRN
+                                (Tax Registration Number).
+
+        Raises:
+            DuplicateResourceError: If the user is already part of another organization
+                                    or if the organization already exists.
+            UnprocessableRequestError: If the domain is a generic one, if the organization and email domains don't match
+                                       or if a logo is uploaded before the organization is created.
+        """
+        # Extract the domain part of the email
+        # NOTE: If extension needs to be removed, use regular expressions
+        email_domain: str = user_email.split('@')[-1]
+        organization_domain: str = kwargs_dict['domain'].split('@')[-1]
+
+        # Get user from token and check whether he/she belongs to another organization
+        if user_db_obj.organization_id is not None:
+            raise DuplicateResourceError('You already belong to another organization')
+
+        # Check if the organization already exists
+        elif OrganizationDB.get_from_id(kwargs_dict['trn']) is not None:
+            raise DuplicateResourceError(f'Organization "{kwargs_dict["trn"]}" already exists')
+
+        # Check organization's domain
+        elif organization_domain in GENERIC_DOMAINS:
+            raise UnprocessableRequestError('Generic domains like Gmail, Hotmail, Outlook, etc. are not supported')
+
+        elif organization_domain != email_domain:
+            raise UnprocessableRequestError('Organization and user email domain do not match')
+
+        # Reject logo image file
+        elif 'logo' in kwargs_dict:
+            raise UnprocessableRequestError('You must create the organization before uploading its logo')
 
 
 class OrganizationView(_OrganizationView):
