@@ -8,6 +8,7 @@ import requests
 from sqlalchemy.exc import OperationalError
 
 from nexusml.api.ext import cache
+from nexusml.api.external.auth0 import Auth0Manager
 from nexusml.api.resources.base import DuplicateResourceError
 from nexusml.api.resources.base import InvalidDataError
 from nexusml.api.resources.base import PermissionDeniedError
@@ -28,9 +29,6 @@ from nexusml.api.schemas.organizations import RoleRequestSchema
 from nexusml.api.schemas.organizations import RoleResponseSchema
 from nexusml.api.schemas.organizations import UserRequestSchema
 from nexusml.api.schemas.organizations import UserResponseSchema
-from nexusml.api.utils import delete_auth0_user
-from nexusml.api.utils import get_auth0_management_api_token
-from nexusml.api.utils import get_auth0_user_data
 from nexusml.constants import ADMIN_ROLE
 from nexusml.constants import API_NAME
 from nexusml.constants import ENDPOINT_CLIENT
@@ -101,6 +99,10 @@ def _update_quota_usage(name: str, description: str = None, delta: Union[int, fl
 
 
 class User(Resource):
+
+    def __init__(self):
+        super().__init__()
+        self.auth0_manager: Auth0Manager = Auth0Manager()
 
     @classmethod
     def db_model(cls):
@@ -198,11 +200,11 @@ class User(Resource):
 
         check_last_admin_deletion(user=self, user_roles=user_roles)
 
-        delete_auth0_user(auth0_id=self.db_object().auth0_id)
+        self.auth0_manager.delete_auth0_user(auth0_id=self.db_object().auth0_id)
         super().delete(notify_to=notify_to)
 
     @staticmethod
-    def download_auth0_user_data(auth0_id_or_email: str) -> dict:
+    def download_auth0_user_data(auth0_id_or_email: str, auth0_manager: Optional[Auth0Manager] = None) -> dict:
         """
         Downloads user's data from Auth0.
 
@@ -215,6 +217,7 @@ class User(Resource):
 
         Args:
             auth0_id_or_email (str): The user's `auth0_id` or email.
+            auth0_manager(Auth0Manager): Auth0Manager instance.
 
         Returns:
             dict: The account data.
@@ -222,9 +225,10 @@ class User(Resource):
         Raises:
             ResourceNotFoundError: If no account is found for the given UUID or email.
         """
-        mgmt_api_access_token: str = get_auth0_management_api_token()
-        auth0_user_data: dict = get_auth0_user_data(access_token=mgmt_api_access_token,
-                                                    auth0_id_or_email=auth0_id_or_email)
+        if not auth0_manager:
+            auth0_manager: Auth0Manager = Auth0Manager()
+
+        auth0_user_data: dict = auth0_manager.get_auth0_user_data(auth0_id_or_email=auth0_id_or_email)
 
         if not auth0_user_data:
             raise ResourceNotFoundError(f'No Auth0 user found for {auth0_id_or_email}')
@@ -245,14 +249,7 @@ class User(Resource):
         fields_map: dict = {'first_name': 'given_name', 'last_name': 'family_name'}
         updated_data: dict = {fields_map.get(key, key): value for key, value in data.items()}
 
-        mgmt_api_access_token = get_auth0_management_api_token()
-        url = f'https://{os.environ[ENV_AUTH0_DOMAIN]}/api/v2/users/{g.user_auth0_id}'
-        headers = {'Authorization': f'Bearer {mgmt_api_access_token}', 'content-type': 'application/json'}
-
-        response = requests.patch(url, json=updated_data, headers=headers)
-        if response.status_code < 200 or response.status_code >= 300:
-            # TODO: Replace this and other 'ifs' with response http error handler method 'raise_for_status'
-            raise requests.HTTPError('Auth0 patch request error')
+        self.auth0_manager.patch_auth0_user(updated_data=updated_data)
 
     def dump(
         self,
@@ -272,7 +269,8 @@ class User(Resource):
         db_user_data.pop('public_id')
 
         auth0_id: str = self.db_object().auth0_id
-        auth0_user_data: dict = self.download_auth0_user_data(auth0_id_or_email=auth0_id)
+        auth0_user_data: dict = self.download_auth0_user_data(auth0_id_or_email=auth0_id,
+                                                              auth0_manager=self.auth0_manager)
         public_auth0_user_data: dict = {
             'email': auth0_user_data['email'],
             'first_name': auth0_user_data['first_name'],
