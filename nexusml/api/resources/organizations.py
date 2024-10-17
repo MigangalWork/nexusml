@@ -3,8 +3,6 @@ import functools
 import os
 from typing import Iterable, List, Optional, Union
 
-from flask import g
-import requests
 from sqlalchemy.exc import OperationalError
 
 from nexusml.api.ext import cache
