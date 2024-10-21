@@ -67,7 +67,7 @@ class TestAuth0Manager:
             aut0_manager: Auth0Manager = Auth0Manager(auth0_token='existing_token')
             mocker.patch.object(aut0_manager, '_get_auth0_management_api_token', return_value='new_token')
 
-            aut0_manager.set_header()
+            aut0_manager.update_authorization_header()
 
             assert aut0_manager._auth0_token == 'new_token'
             assert aut0_manager.authorization_headers['Authorization'] == 'Bearer new_token'

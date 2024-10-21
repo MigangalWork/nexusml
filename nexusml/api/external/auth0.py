@@ -34,11 +34,11 @@ class Auth0Manager:
         self.authorization_headers: dict = {'Authorization': 'Bearer ' + auth0_token}
 
         if auth0_token == "":
-            self.set_header()
+            self.update_authorization_header()
 
-    def set_header(self) -> None:
+    def update_authorization_header(self) -> None:
         """
-        Sets the authorization headers by retrieving a new Auth0 management API token.
+        Updates the authorization headers by retrieving a new Auth0 management API token.
 
         This function is called when no token is provided during initialization, ensuring that the instance has valid
         credentials to interact with Auth0 Management API.
@@ -110,7 +110,7 @@ class Auth0Manager:
 
         auth0_user_data = response.json()
         if auth0_user_data and isinstance(auth0_user_data, list):
-            auth0_user_data: dict = auth0_user_data[0]
+            auth0_user_data = auth0_user_data[0]
 
         return auth0_user_data
 
