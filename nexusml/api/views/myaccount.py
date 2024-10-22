@@ -89,30 +89,6 @@ class MyAccountView(_MyAccountView):
                         check_permissions=False,
                         check_parents=False)
 
-    def _get_user_invitation(self, token_error: jwt.InvalidTokenError, email: str) -> InvitationDB:
-        """
-        Retrieves the user invitation from the database based on the Auth0 user data.
-
-        This function fetches an Auth0 management API token and uses it to obtain user data
-        either by Auth0 ID or email. It then queries the database for a pending user
-        invitation corresponding to the email found in the Auth0 user data. If no such
-        invitation is found, it raises the provided token error.
-
-        Args:
-            token_error (jwt.InvalidTokenError): The error to raise if the user invitation is not found.
-
-        Returns:
-            InvitationDB: The user invitation if found.
-
-        Raises:
-            jwt.InvalidTokenError: If the user invitation is not found.
-        """
-        user_invitation: InvitationDB = InvitationDB.query().filter_by(email=email, status=InviteStatus.PENDING).first()
-        if not user_invitation:
-            raise token_error
-
-        return user_invitation
-
     @doc(tags=[SWAGGER_TAG_MYACCOUNT])
     def delete(self):
         """
