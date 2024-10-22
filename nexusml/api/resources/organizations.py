@@ -100,7 +100,7 @@ class User(Resource):
 
     def __init__(self):
         super().__init__()
-        self.auth0_manager: Auth0Manager = Auth0Manager()
+        self._auth0_manager: Auth0Manager = Auth0Manager()
 
     @classmethod
     def db_model(cls):
@@ -198,7 +198,7 @@ class User(Resource):
 
         check_last_admin_deletion(user=self, user_roles=user_roles)
 
-        self.auth0_manager.delete_auth0_user(auth0_id=self.db_object().auth0_id)
+        self._auth0_manager.delete_auth0_user(auth0_id=self.db_object().auth0_id)
         super().delete(notify_to=notify_to)
 
     @staticmethod
@@ -247,7 +247,7 @@ class User(Resource):
         fields_map: dict = {'first_name': 'given_name', 'last_name': 'family_name'}
         updated_data: dict = {fields_map.get(key, key): value for key, value in data.items()}
 
-        self.auth0_manager.patch_auth0_user(updated_data=updated_data)
+        self._auth0_manager.patch_auth0_user(updated_data=updated_data)
 
     def dump(
         self,
@@ -268,7 +268,7 @@ class User(Resource):
 
         auth0_id: str = self.db_object().auth0_id
         auth0_user_data: dict = self.download_auth0_user_data(auth0_id_or_email=auth0_id,
-                                                              auth0_manager=self.auth0_manager)
+                                                              auth0_manager=self._auth0_manager)
         public_auth0_user_data: dict = {
             'email': auth0_user_data['email'],
             'first_name': auth0_user_data['first_name'],
