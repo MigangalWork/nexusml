@@ -86,7 +86,7 @@ from nexusml.database.examples import ExFile
 from nexusml.database.examples import ShapeCategory
 from nexusml.database.examples import ShapeDB
 from nexusml.database.files import TaskFileDB
-from nexusml.database.organizations import ClientDB
+from nexusml.database.organizations import ClientDB, user_roles
 from nexusml.database.organizations import CollaboratorDB
 from nexusml.database.organizations import InvitationDB
 from nexusml.database.organizations import OrganizationDB
@@ -341,54 +341,41 @@ def _populate_demo_tasks(user_id: int, pk_maps: Dict[str, list]):
 class OrganizationsView(_OrganizationsView):
 
     @staticmethod
-    def _set_organization(user_auth0_id: str, org_db_object: OrganizationDB, copy_demo_tasks: bool) -> Organization:
+    def _set_organization(creator_user_db_obj: UserDB, org_db_object: OrganizationDB, copy_demo_tasks: bool) -> Organization:
         """
         Sets up an organization's basic configuration. It subscribes the organization to the Free Plan,
         creates predefined roles ("admin" and "maintainer"), assigns the admin role to the user,
         and optionally copies demo tasks.
 
+        NOTE: these two roles ("admin" and "maintainer") are not taken into account for the maximum number
+              of roles offered by the Plan.
+
         Args:
-            user_auth0_id (str): Auth0 ID of the user creating the organization.
+            creator_user_db_obj (UserDB): Db object of user creating the organization.
             org_db_object (OrganizationDB): The organization database object.
             copy_demo_tasks (bool): Whether to copy demo tasks for the organization.
 
         Returns:
             Organization: The organization object with the basic configuration set.
         """
-        ##############################
-        # Subscribe to the Free Plan #
-        ##############################
-        subscription = SubscriptionDB(organization_id=org_db_object.organization_id, plan_id=FREE_PLAN_ID)
-        #########################################################################################################
-        # Create "admin" and "maintainer" roles.                                                                #
-
-        # NOTE: these two roles are not taken into account for the maximum number of roles offered by the Plan. #
-        #########################################################################################################
+        # Create "admin" and "maintainer" roles.
         admin_role = RoleDB(organization_id=org_db_object.organization_id, name=ADMIN_ROLE, description='Administrator')
         maintainer_role = RoleDB(organization_id=org_db_object.organization_id,
                                  name=MAINTAINER_ROLE,
                                  description='Maintainer')
         save_to_db([admin_role, maintainer_role])
-        ###################################################################################
-        # Add the first user ( session user) to the organization and assign "admin" role #
-        ###################################################################################
-        user_db_obj: UserDB = UserDB(auth0_id=user_auth0_id, organization_id=org_db_object.organization_id)
-        save_to_db(user_db_obj)
 
-        # Assign "admin" role to session user_db_obj
-        user_db_obj.roles.append(admin_role)
-        save_to_db(admin_role)
+        # Assign the new organization to the user.
+        creator_user_db_obj.organization_id = org_db_object.organization_id
+        # Assign the "admin" role to the user.
+        creator_user_db_obj.roles.append(admin_role)
+        save_to_db(creator_user_db_obj)
 
-        # If user email's domain doesn't match organization's, delete the organization
-        # TODO: user email should be checked before creating the organization.
-        #       We are doing this way because we need a `session_agent` for creating the organization.
-        auth0_user_data: dict = User.download_auth0_user_data(auth0_id_or_email=user_db_obj.auth0_id)
-        if auth0_user_data['email'].split('@')[-1] != org_db_object.domain:
-            raise UnprocessableRequestError("Domains don't match")
-
-        # Update user count
+        # Subscribe to the Free Plan and update user count
+        subscription = SubscriptionDB(organization_id=org_db_object.organization_id, plan_id=FREE_PLAN_ID)
         subscription.num_users = 1
         save_to_db(subscription)
+
         ############################################################
         # Copy demo tasks in the background (asynchronous process) #
         ############################################################
@@ -397,7 +384,7 @@ class OrganizationsView(_OrganizationsView):
             pk_maps = dict()
             for demo_task in demo_tasks():
                 # Copy task schema
-                task_copy, pk_map = copy_task_to_organization(src_task=demo_task, agent=user_db_obj)
+                task_copy, pk_map = copy_task_to_organization(src_task=demo_task, agent=creator_user_db_obj)
                 pk_maps[demo_task.task_id] = (task_copy.task_id, pk_map)
                 # Initialize task
                 task_copy.init_task()
@@ -405,9 +392,9 @@ class OrganizationsView(_OrganizationsView):
                 _update_task_copy_progress(task=task_copy, progress=0)
 
             # Populate tasks in the background
-            _populate_demo_tasks.delay(user_db_obj.user_id, pk_maps)
+            _populate_demo_tasks.delay(creator_user_db_obj.user_id, pk_maps)
 
-        return Organization.get(agent=user_db_obj, db_object_or_id=org_db_object)
+        return Organization.get(agent=creator_user_db_obj, db_object_or_id=org_db_object)
 
     @doc(tags=[SWAGGER_TAG_ORGANIZATIONS])
     @use_kwargs(OrganizationPOSTRequestSchema, location='json')
@@ -423,7 +410,40 @@ class OrganizationsView(_OrganizationsView):
         Returns:
             Response: The response with the organization details and appropriate status code.
         """
-        # Check the number of organizations created so far. If the limit is reached, add user to the wait list.
+        self._check_organization_limit()
+
+        user_db_obj: UserDB = UserDB.get_from_uuid(g.agent_uuid)
+        self._organization_post_validations(user_db_obj=user_db_obj, kwargs_dict=kwargs)
+
+        # Save organization to database
+        org_db_object = OrganizationDB(**kwargs)
+        save_to_db(org_db_object)
+
+        # Set organization (subscription, admin user, predefined roles, demo tasks)
+        try:
+            organization = OrganizationsView._set_organization(
+                creator_user_db_obj=user_db_obj,
+                org_db_object=org_db_object,
+                copy_demo_tasks=config.get('general')['demo_tasks_enabled'])
+        except Exception as e:
+            delete_from_db(org_db_object)
+            raise e
+
+        # Set response
+        response = jsonify(organization.dump())
+        response.status_code = HTTP_POST_STATUS_CODE
+        response.headers['Location'] = organization.url()
+        return response
+
+    def _check_organization_limit(self):
+        """
+        Checks whether the number of organizations has reached the configured limit. If the limit is exceeded,
+        it adds the current user to a waitlist. It also ensures the waitlist does not exceed a maximum size by
+        removing the oldest entry if necessary.
+
+        Raises:
+            HTTP_SERVICE_UNAVAILABLE: When the system capacity has been exceeded and the user is added to the waitlist.
+        """
         max_num_orgs = config.get('limits')['organizations']['num_organizations']
         if OrganizationDB.query().count() >= max_num_orgs:
             try:
@@ -445,41 +465,41 @@ class OrganizationsView(_OrganizationsView):
                        'will be notified as soon as we can accommodate your request.')
             return error_response(code=HTTP_SERVICE_UNAVAILABLE, message=err_msg)
 
+    def _organization_post_validations(self, user_db_obj: UserDB, kwargs_dict: dict):
+        """
+        The function ensures that the user is not already associated with another organization, that the
+        organization domain and TRN are valid, and rejects inappropriate logo uploads.
+
+        Args:
+            user_db_obj (UserDB): The user database object retrieved from the system for validation.
+            kwargs_dict (dict): A dictionary containing the organization data, such as domain, logo, and TRN
+                                (Tax Registration Number).
+
+        Raises:
+            DuplicateResourceError: If the user is already part of another organization
+                                    or if the organization already exists.
+            UnprocessableRequestError: If the domain is a generic one, if the organization and email domains don't match
+                                       or if a logo is uploaded before the organization is created.
+        """
+        organization_domain: str = kwargs_dict['domain'][:kwargs_dict['domain'].rindex('.')]
         # Get user from token and check whether he/she belongs to another organization
-        if UserDB.get_from_uuid(g.agent_uuid) is not None:
+        if user_db_obj.organization_id is not None:
             raise DuplicateResourceError('You already belong to another organization')
 
         # Check if the organization already exists
-        if OrganizationDB.get_from_id(kwargs['trn']) is not None:
-            raise DuplicateResourceError(f'Organization "{kwargs["trn"]}" already exists')
+        elif OrganizationDB.get_from_id(kwargs_dict['trn']) is not None:
+            raise DuplicateResourceError(f'Organization "{kwargs_dict["trn"]}" already exists')
 
         # Check organization's domain
-        if kwargs['domain'][:kwargs['domain'].rindex('.')] in GENERIC_DOMAINS:
+        elif organization_domain in GENERIC_DOMAINS:
             raise UnprocessableRequestError('Generic domains like Gmail, Hotmail, Outlook, etc. are not supported')
 
+        elif organization_domain != g.token['email'].split('@')[-1]:
+            raise UnprocessableRequestError('Organization and user email domain do not match')
+
         # Reject logo image file
-        if 'logo' in kwargs:
+        elif 'logo' in kwargs_dict:
             raise UnprocessableRequestError('You must create the organization before uploading its logo')
-
-        # Save organization to database
-        org_db_object = OrganizationDB(**kwargs)
-        save_to_db(org_db_object)
-
-        # Set organization (subscription, admin user, predefined roles, demo tasks)
-        try:
-            organization = OrganizationsView._set_organization(
-                user_auth0_id=g.user_auth0_id,
-                org_db_object=org_db_object,
-                copy_demo_tasks=config.get('general')['demo_tasks_enabled'])
-        except Exception as e:
-            delete_from_db(org_db_object)
-            raise e
-
-        # Set response
-        response = jsonify(organization.dump())
-        response.status_code = HTTP_POST_STATUS_CODE
-        response.headers['Location'] = organization.url()
-        return response
 
 
 class OrganizationView(_OrganizationView):
@@ -625,6 +645,63 @@ class UsersView(_UserView):
                                    resource_type=User,
                                    parents=resources)
         return jsonify(users)
+
+    @doc(tags=[SWAGGER_TAG_ORGANIZATIONS])
+    @use_kwargs(OrganizationPOSTRequestSchema, location='json')
+    def post(self, **kwargs):
+        existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
+        if existing_user_db_obj:
+            raise DuplicateResourceError(f'User already exists')
+
+        user_email: str = g.token['email']
+        user_invitation: InvitationDB = InvitationDB.query().filter_by(email=user_email,
+                                                                       status=InviteStatus.PENDING).first()
+
+        if user_invitation:
+            self._create_new_user_from_invitation(user_invitation=user_invitation, user_auth0_id=g.user_auth0_id)
+
+        else:
+            user_db_obj: UserDB = UserDB(auth0_id=g.user_auth0_id)
+            save_to_db(user_db_obj)
+
+    def _create_new_user_from_invitation(self, user_invitation: InvitationDB, user_auth0_id: str) -> User:
+        """
+        Creates a new user from the provided user invitation.
+
+        This function checks for an existing admin user in the same organization as the
+        user invitation since an admin user is needed to create another user.
+        It then creates a new user using the email from the user invitation
+        and associates it with the organization. The status of the user invitation is
+        updated to accepted and saved to the database.
+
+        Args:
+            user_invitation (InvitationDB): The user invitation to create a new user from.
+
+        Returns:
+            User: The newly created user.
+        """
+        admin_user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
+            RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(
+            UserDB.organization_id == user_invitation.organization_id,
+            RoleDB.name == ADMIN_ROLE,
+        ).first()
+
+        organization: Organization = Organization.get(agent=admin_user_db_obj,
+                                                      db_object_or_id=admin_user_db_obj.organization,
+                                                      check_permissions=False)
+
+        new_user: User = User()
+        new_user.post(agent=admin_user_db_obj,
+                      data={
+                          'email': user_invitation.email,
+                          'auth0_id': user_auth0_id
+                      },
+                      parents=[organization])
+
+        user_invitation.status = InviteStatus.ACCEPTED
+        save_to_db(user_invitation)
+
+        return new_user
 
 
 class UserView(_UserView):
