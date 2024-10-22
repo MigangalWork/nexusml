@@ -100,7 +100,7 @@ class TestMyAccount:
             'email_verified': True
         }
 
-    def test_put(self, mock_request_responses, mocker, client: MockClient):
+    def test_put(self, mocker, client: MockClient):
         endpoint_url = get_endpoint(parameterized_endpoint=ENDPOINT_MYACCOUNT)
         mock_auth0_manager = mocker.patch('nexusml.api.resources.organizations.Auth0Manager')
         mock_auth0_manager.patch_auth0_user.return_value = None
