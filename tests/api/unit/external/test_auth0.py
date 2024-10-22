@@ -1,10 +1,11 @@
 import pytest
-from werkzeug.exceptions import BadRequest
-from requests import Response
 import requests
+from requests import Response
+from werkzeug.exceptions import BadRequest
 
-from nexusml.env import ENV_AUTH0_CLIENT_ID, ENV_AUTH0_CLIENT_SECRET
 from nexusml.api.external.auth0 import Auth0Manager
+from nexusml.env import ENV_AUTH0_CLIENT_ID
+from nexusml.env import ENV_AUTH0_CLIENT_SECRET
 
 
 class TestAuth0Manager:
@@ -94,16 +95,14 @@ class TestAuth0Manager:
             token = aut0_manager._get_auth0_management_api_token()
 
             assert token == 'mock_access_token'
-            requests.post.assert_called_once_with(
-                'https://example.auth0.com/oauth/token',
-                json={
-                    'grant_type': 'client_credentials',
-                    'client_id': 'your_client_id',
-                    'client_secret': 'your_client_secret',
-                    'audience': 'https://example.auth0.com/api/v2/',
-                },
-                headers={'Content-Type': 'application/json'}
-            )
+            requests.post.assert_called_once_with('https://example.auth0.com/oauth/token',
+                                                  json={
+                                                      'grant_type': 'client_credentials',
+                                                      'client_id': 'your_client_id',
+                                                      'client_secret': 'your_client_secret',
+                                                      'audience': 'https://example.auth0.com/api/v2/',
+                                                  },
+                                                  headers={'Content-Type': 'application/json'})
 
     class TestGetAuth0UserData:
         """Tests for the get_auth0_user_data method of Auth0Manager."""
@@ -130,8 +129,7 @@ class TestAuth0Manager:
             assert result == {'email': 'user@example.com'}
             requests.get.assert_called_once_with(
                 'https://example.auth0.com/api/v2/users?q=email:user%40example.com&search_engine=v3',
-                headers=aut0_manager.authorization_headers
-            )
+                headers=aut0_manager.authorization_headers)
 
         def test_get_auth0_user_data_by_auth0_id(self, mocker):
             """
@@ -153,10 +151,8 @@ class TestAuth0Manager:
             result = manager.get_auth0_user_data(auth0_id_or_email='auth0|123456')
 
             assert result == {'user_id': 'auth0|123456'}
-            requests.get.assert_called_once_with(
-                'https://example.auth0.com/api/v2/users/auth0%7C123456',
-                headers=manager.authorization_headers
-            )
+            requests.get.assert_called_once_with('https://example.auth0.com/api/v2/users/auth0%7C123456',
+                                                 headers=manager.authorization_headers)
 
         def test_get_auth0_user_data_not_found(self, mocker):
             """
@@ -196,10 +192,8 @@ class TestAuth0Manager:
 
             aut0_manager.delete_auth0_user(auth0_id='auth0|123456')
 
-            requests.delete.assert_called_once_with(
-                'https://example.auth0.com/api/v2/users/auth0|123456',
-                headers=aut0_manager.authorization_headers
-            )
+            requests.delete.assert_called_once_with('https://example.auth0.com/api/v2/users/auth0|123456',
+                                                    headers=aut0_manager.authorization_headers)
 
         def test_delete_auth0_user_failed(self, mocker):
             """
@@ -244,11 +238,12 @@ class TestAuth0Manager:
                              user_auth0_id='auth0|123456')
                 aut0_manager.patch_auth0_user(updated_data={'email': 'newemail@example.com'})
 
-            requests.patch.assert_called_once_with(
-                'https://example.auth0.com/api/v2/users/auth0|123456',
-                json={'email': 'newemail@example.com'},
-                headers={'Authorization': 'Bearer some_token', 'content-type': 'application/json'}
-            )
+            requests.patch.assert_called_once_with('https://example.auth0.com/api/v2/users/auth0|123456',
+                                                   json={'email': 'newemail@example.com'},
+                                                   headers={
+                                                       'Authorization': 'Bearer some_token',
+                                                       'content-type': 'application/json'
+                                                   })
 
         def test_patch_auth0_user_failed(self, mocker, app):
             """
