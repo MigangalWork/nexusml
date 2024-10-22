@@ -130,6 +130,10 @@ class UserDB(Entity):
                             backref=db.backref('users', lazy='dynamic'),
                             lazy='selectin')
 
+    @declared_attr
+    def organization(cls):
+        return relationship('OrganizationDB')
+
     @classmethod
     def filter_by_organization(cls, organization_id) -> list:
         return cls.query().filter_by(organization_id=organization_id).all()
