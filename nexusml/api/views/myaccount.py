@@ -79,18 +79,7 @@ class MyAccountView(_MyAccountView):
         Returns:
             User: The user object associated with the authentication token.
         """
-        # TODO: Check this try except (except is a good path). Non exception logic should not be inside an except.
-        try:
-            user_db_object: UserDB = agent_from_token()
-        except jwt.InvalidTokenError as token_error:
-            auth0_manager: Auth0Manager = Auth0Manager()
-            auth0_user_data: dict = auth0_manager.get_auth0_user_data(auth0_id_or_email=g.user_auth0_id)
-            user_invitation: InvitationDB = self._get_user_invitation(token_error=token_error,
-                                                                      email=auth0_user_data['email'])
-            new_user: User = self._create_new_user_from_invitation(user_invitation=user_invitation,
-                                                                   user_auth0_id=auth0_user_data['user_id'])
-            return new_user
-
+        user_db_object: UserDB = agent_from_token()
         organization = Organization.get(agent=user_db_object,
                                         db_object_or_id=user_db_object.organization,
                                         check_permissions=False)
@@ -123,45 +112,6 @@ class MyAccountView(_MyAccountView):
             raise token_error
 
         return user_invitation
-
-    def _create_new_user_from_invitation(self, user_invitation: InvitationDB, user_auth0_id: str) -> User:
-        """
-        Creates a new user from the provided user invitation.
-
-        This function checks for an existing admin user in the same organization as the
-        user invitation since an admin user is needed to create another user.
-        It then creates a new user using the email from the user invitation
-        and associates it with the organization. The status of the user invitation is
-        updated to accepted and saved to the database.
-
-        Args:
-            user_invitation (InvitationDB): The user invitation to create a new user from.
-
-        Returns:
-            User: The newly created user.
-        """
-        admin_user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
-            RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(
-                UserDB.organization_id == user_invitation.organization_id,
-                RoleDB.name == ADMIN_ROLE,
-            ).first()
-
-        organization: Organization = Organization.get(agent=admin_user_db_obj,
-                                                      db_object_or_id=admin_user_db_obj.organization,
-                                                      check_permissions=False)
-
-        new_user = User()
-        new_user.post(agent=admin_user_db_obj,
-                      data={
-                          'email': user_invitation.email,
-                          'auth0_id': user_auth0_id
-                      },
-                      parents=[organization])
-
-        user_invitation.status = InviteStatus.ACCEPTED
-        save_to_db(user_invitation)
-
-        return new_user
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT])
     def delete(self):
