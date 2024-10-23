@@ -122,8 +122,6 @@ class UserDB(Entity):
     user_id = Column(INTEGER(unsigned=True), primary_key=True, autoincrement=True)
     organization_id = Column(INTEGER(unsigned=True), ForeignKey(OrganizationDB.organization_id))
 
-    # organization = db.relationship('OrganizationDB', backref=db.backref('UserDB'))
-
     # Many-to-Many relationships
     roles = db.relationship('RoleDB',
                             secondary='user_roles',
