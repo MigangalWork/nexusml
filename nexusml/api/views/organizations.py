@@ -1,6 +1,7 @@
+import re
 from datetime import datetime
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from celery import shared_task
 from flask import current_app
@@ -410,7 +411,9 @@ class OrganizationsView(_OrganizationsView):
         Returns:
             Response: The response with the organization details and appropriate status code.
         """
-        self._check_organization_limit()
+        error_response_: Optional[Response] = self._check_organization_limit()
+        if error_response_:
+            return error_response_
 
         user_db_obj: UserDB = UserDB.get_from_uuid(g.agent_uuid)
         self._organization_post_validations(user_db_obj=user_db_obj, kwargs_dict=kwargs)
@@ -435,14 +438,14 @@ class OrganizationsView(_OrganizationsView):
         response.headers['Location'] = organization.url()
         return response
 
-    def _check_organization_limit(self):
+    def _check_organization_limit(self) -> Optional[Response]:
         """
         Checks whether the number of organizations has reached the configured limit. If the limit is exceeded,
         it adds the current user to a waitlist. It also ensures the waitlist does not exceed a maximum size by
         removing the oldest entry if necessary.
 
-        Raises:
-            HTTP_SERVICE_UNAVAILABLE: When the system capacity has been exceeded and the user is added to the waitlist.
+        Returns:
+                A JSON response with a 503 status code when the system capacity has been exceeded.
         """
         max_num_orgs = config.get('limits')['organizations']['num_organizations']
         if OrganizationDB.query().count() >= max_num_orgs:
@@ -463,6 +466,7 @@ class OrganizationsView(_OrganizationsView):
                        'We are working hard to scale our system to better serve you. '
                        'In the meantime, you have been added to our wait list and '
                        'will be notified as soon as we can accommodate your request.')
+
             return error_response(code=HTTP_SERVICE_UNAVAILABLE, message=err_msg)
 
     def _organization_post_validations(self, user_db_obj: UserDB, kwargs_dict: dict):
@@ -481,7 +485,11 @@ class OrganizationsView(_OrganizationsView):
             UnprocessableRequestError: If the domain is a generic one, if the organization and email domains don't match
                                        or if a logo is uploaded before the organization is created.
         """
-        organization_domain: str = kwargs_dict['domain'][:kwargs_dict['domain'].rindex('.')]
+        # Extract the domain part of the email
+        # NOTE: If extension needs to be removed, use regular expressions
+        email_domain: str = g.token['email'].split('@')[-1]
+        organization_domain: str = kwargs_dict['domain'].split('@')[-1]
+
         # Get user from token and check whether he/she belongs to another organization
         if user_db_obj.organization_id is not None:
             raise DuplicateResourceError('You already belong to another organization')
@@ -494,7 +502,7 @@ class OrganizationsView(_OrganizationsView):
         elif organization_domain in GENERIC_DOMAINS:
             raise UnprocessableRequestError('Generic domains like Gmail, Hotmail, Outlook, etc. are not supported')
 
-        elif organization_domain != g.token['email'].split('@')[-1]:
+        elif organization_domain != email_domain:
             raise UnprocessableRequestError('Organization and user email domain do not match')
 
         # Reject logo image file
