@@ -655,7 +655,8 @@ class UsersView(_UserView):
         return jsonify(users)
 
     @doc(tags=[SWAGGER_TAG_ORGANIZATIONS])
-    @use_kwargs(OrganizationPOSTRequestSchema, location='json')
+    @use_kwargs(_url_params, location='query')
+    @marshal_with(UsersPage)
     def post(self, **kwargs):
         existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
         if existing_user_db_obj:
