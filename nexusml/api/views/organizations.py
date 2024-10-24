@@ -654,65 +654,6 @@ class UsersView(_UserView):
                                    parents=resources)
         return jsonify(users)
 
-    @doc(tags=[SWAGGER_TAG_ORGANIZATIONS])
-    @use_kwargs(_url_params, location='query')
-    @marshal_with(UsersPage)
-    def post(self, organization_id: str, resources: List[Resource], **kwargs):
-        existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
-        if existing_user_db_obj:
-            raise DuplicateResourceError(f'User already exists')
-
-        user_email: str = g.token['email']
-        user_invitation: InvitationDB = InvitationDB.query().filter_by(email=user_email,
-                                                                       status=InviteStatus.PENDING).first()
-
-        if user_invitation:
-            self._create_new_user_from_invitation(user_invitation=user_invitation, user_auth0_id=g.user_auth0_id)
-
-        else:
-            user_db_obj: UserDB = UserDB(auth0_id=g.user_auth0_id)
-            save_to_db(user_db_obj)
-
-    def _create_new_user_from_invitation(self, user_invitation: InvitationDB, user_auth0_id: str) -> User:
-        """
-        Creates a new user from the provided user invitation.
-
-        This function checks for an existing admin user in the same organization as the
-        user invitation since an admin user is needed to create another user.
-        It then creates a new user using the email from the user invitation
-        and associates it with the organization. The status of the user invitation is
-        updated to accepted and saved to the database.
-
-        Args:
-            user_invitation (InvitationDB): The user invitation to create a new user from.
-
-        Returns:
-            User: The newly created user.
-        """
-        admin_user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
-            RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(
-            UserDB.organization_id == user_invitation.organization_id,
-            RoleDB.name == ADMIN_ROLE,
-        ).first()
-
-        organization: Organization = Organization.get(agent=admin_user_db_obj,
-                                                      db_object_or_id=admin_user_db_obj.organization,
-                                                      check_permissions=False)
-
-        new_user: User = User()
-        new_user.post(agent=admin_user_db_obj,
-                      data={
-                          'email': user_invitation.email,
-                          'auth0_id': user_auth0_id
-                      },
-                      parents=[organization])
-
-        user_invitation.status = InviteStatus.ACCEPTED
-        save_to_db(user_invitation)
-
-        return new_user
-
-
 class UserView(_UserView):
 
     @doc(tags=[SWAGGER_TAG_ORGANIZATIONS], description='Note: only available to admins and maintainers')
