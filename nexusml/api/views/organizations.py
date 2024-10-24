@@ -457,7 +457,7 @@ class OrganizationsView(_OrganizationsView):
                     oldest_entry = WaitList.query().order_by(WaitList.id_).first()
                     delete_from_db(oldest_entry)
 
-                # TODO: Check this g.token data
+                # TODO: Check this if g.token data have this data
                 db_entry = WaitList(uuid=g.agent_uuid,
                                     email=g.token['email'],
                                     first_name=g.token['given_name'],
