@@ -487,7 +487,7 @@ class OrganizationsView(_OrganizationsView):
         """
         # Extract the domain part of the email
         # NOTE: If extension needs to be removed, use regular expressions
-        email_domain: str = g.token['email'].split('@')[-1]
+        email_domain: str = kwargs_dict['email'].split('@')[-1]
         organization_domain: str = kwargs_dict['domain'].split('@')[-1]
 
         # Get user from token and check whether he/she belongs to another organization

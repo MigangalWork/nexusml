@@ -25,7 +25,7 @@ from nexusml.api.schemas.myaccount import ClientSettingsResponseSchema
 from nexusml.api.schemas.myaccount import MyAccountRolesSchema
 from nexusml.api.schemas.myaccount import NotificationSchema
 from nexusml.api.schemas.myaccount import SettingsSchema
-from nexusml.api.schemas.organizations import OrganizationPermissionsPage
+from nexusml.api.schemas.organizations import OrganizationPermissionsPage, UserRequestSchema
 from nexusml.api.schemas.organizations import OrganizationResponseSchema
 from nexusml.api.schemas.organizations import UserResponseSchema
 from nexusml.api.schemas.organizations import UserUpdateSchema
@@ -138,6 +138,7 @@ class MyAccountView(_MyAccountView):
         return response
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT])
+    @use_kwargs(UserRequestSchema, location='json')
     @marshal_with(UserResponseSchema)
     def post(self, **kwargs):
         existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
