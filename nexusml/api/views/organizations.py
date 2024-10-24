@@ -657,7 +657,7 @@ class UsersView(_UserView):
     @doc(tags=[SWAGGER_TAG_ORGANIZATIONS])
     @use_kwargs(_url_params, location='query')
     @marshal_with(UsersPage)
-    def post(self, **kwargs):
+    def post(self, organization_id: str, resources: List[Resource], **kwargs):
         existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
         if existing_user_db_obj:
             raise DuplicateResourceError(f'User already exists')
