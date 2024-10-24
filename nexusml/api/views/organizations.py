@@ -15,6 +15,7 @@ from flask_apispec import use_kwargs
 from flask_mail import Message
 
 from nexusml.api.ext import mail
+from nexusml.api.external.auth0 import Auth0Manager
 from nexusml.api.resources.base import dump
 from nexusml.api.resources.base import DuplicateResourceError
 from nexusml.api.resources.base import InvalidDataError
@@ -342,7 +343,8 @@ def _populate_demo_tasks(user_id: int, pk_maps: Dict[str, list]):
 class OrganizationsView(_OrganizationsView):
 
     @staticmethod
-    def _set_organization(creator_user_db_obj: UserDB, org_db_object: OrganizationDB, copy_demo_tasks: bool) -> Organization:
+    def _set_organization(creator_user_db_obj: UserDB, org_db_object: OrganizationDB,
+                          copy_demo_tasks: bool) -> Organization:
         """
         Sets up an organization's basic configuration. It subscribes the organization to the Free Plan,
         creates predefined roles ("admin" and "maintainer"), assigns the admin role to the user,
@@ -454,6 +456,8 @@ class OrganizationsView(_OrganizationsView):
                 if WaitList.query().count() >= max_waitlist_len:
                     oldest_entry = WaitList.query().order_by(WaitList.id_).first()
                     delete_from_db(oldest_entry)
+
+                # TODO: Check this g.token data
                 db_entry = WaitList(uuid=g.agent_uuid,
                                     email=g.token['email'],
                                     first_name=g.token['given_name'],
@@ -487,7 +491,9 @@ class OrganizationsView(_OrganizationsView):
         """
         # Extract the domain part of the email
         # NOTE: If extension needs to be removed, use regular expressions
-        email_domain: str = kwargs_dict['email'].split('@')[-1]
+        auth0_manager: Auth0Manager = Auth0Manager()
+        auth0_user_data: dict = auth0_manager.get_auth0_user_data(auth0_id_or_email=g.user_auth0_id)
+        email_domain: str = auth0_user_data['email'].split('@')[-1]
         organization_domain: str = kwargs_dict['domain'].split('@')[-1]
 
         # Get user from token and check whether he/she belongs to another organization
@@ -653,6 +659,7 @@ class UsersView(_UserView):
                                    resource_type=User,
                                    parents=resources)
         return jsonify(users)
+
 
 class UserView(_UserView):
 

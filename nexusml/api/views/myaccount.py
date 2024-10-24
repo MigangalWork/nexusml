@@ -138,14 +138,15 @@ class MyAccountView(_MyAccountView):
         return response
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT])
-    @use_kwargs(UserRequestSchema, location='json')
     @marshal_with(UserResponseSchema)
-    def post(self, **kwargs):
+    def post(self):
         existing_user_db_obj: UserDB = UserDB.query().filter_by(auth0_id=g.user_auth0_id).first()
         if existing_user_db_obj:
             raise DuplicateResourceError(f'User already exists')
 
-        user_email: str = kwargs['email']
+        auth0_manager: Auth0Manager = Auth0Manager()
+        auth0_user_data: dict = auth0_manager.get_auth0_user_data(auth0_id_or_email=g.user_auth0_id)
+        user_email: str = auth0_user_data['email']
         user_invitation: InvitationDB = InvitationDB.query().filter_by(email=user_email,
                                                                        status=InviteStatus.PENDING).first()
 
