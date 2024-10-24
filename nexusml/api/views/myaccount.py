@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Optional
 
 from flask import g
 from flask import jsonify
@@ -79,13 +79,23 @@ class MyAccountView(_MyAccountView):
         Returns:
             User: The user object associated with the authentication token.
         """
-        user_db_object: UserDB = agent_from_token()
-        organization = Organization.get(agent=user_db_object,
-                                        db_object_or_id=user_db_object.organization,
-                                        check_permissions=False)
+        parents: Optional[list] = None
+        try:
+            user_db_object: UserDB = agent_from_token()
+        except jwt.InvalidTokenError:
+            raise ResourceNotFoundError()
+
+        try:
+            organization = Organization.get(agent=user_db_object,
+                                            db_object_or_id=user_db_object.organization,
+                                            check_permissions=False)
+            parents = [organization]
+        except Exception:
+            pass
+
         return User.get(agent=user_db_object,
                         db_object_or_id=user_db_object,
-                        parents=[organization],
+                        parents=parents,
                         check_permissions=False,
                         check_parents=False)
 
