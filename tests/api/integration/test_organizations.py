@@ -93,7 +93,6 @@ _CLIENT_ID = NUM_RESERVED_CLIENTS + 2  # First client IDs are reserved for offic
 class TestOrganizations:
 
     def test_post(self,
-                  mock_request_responses,
                   client: MockClient,
                   mock_client_id: str,
                   session_user_id: str,
@@ -102,8 +101,10 @@ class TestOrganizations:
         Valid request
         """
         # Delete session user from database to be able to create a new organization
-        session_user = UserDB.query().filter_by(auth0_id=session_user_auth0_id).first()
-        delete_from_db(session_user)
+        session_user: UserDB = UserDB.query().filter_by(auth0_id=session_user_auth0_id).first()
+        session_user.roles = []
+        session_user.organization_id = None
+        save_to_db(session_user)
 
         # Make request and verify response
         valid_org_data = {'trn': 'test_trn', 'name': 'test_name', 'domain': 'testorg.com', 'address': 'test_address'}
@@ -118,7 +119,6 @@ class TestOrganizations:
         # Check database
         db_commit_and_expire()
         session_user = UserDB.query().filter_by(auth0_id=session_user_auth0_id).first()
-        assert session_user is not None
         user_roles = db_query(user_roles_table).filter(user_roles_table.c.user_id == session_user.user_id).all()
         assert len(user_roles) == 1  # the user creating the organization becomes the admin
         user_role = user_roles[0]
@@ -163,8 +163,10 @@ class TestOrganizations:
         #################
         # Duplicate TRN #
         #################
-        delete_from_db(UserDB.query().filter_by(auth0_id=session_user_auth0_id).first())
-        assert UserDB.query().filter_by(auth0_id=session_user_auth0_id).first() is None
+        session_user: UserDB = UserDB.query().filter_by(auth0_id=session_user_auth0_id).first()
+        session_user.roles = []
+        session_user.organization_id = None
+        save_to_db(session_user)
         duplicate_trn = 'org_2_trn'
         assert OrganizationDB.get_from_id(id_value=duplicate_trn) is not None
         invalid_org_data = {
@@ -181,8 +183,11 @@ class TestOrganizations:
         ###############################################
         # Domain mismatch (user's and organization's) #
         ###############################################
+        session_user: UserDB = UserDB.query().filter_by(auth0_id=session_user_auth0_id).first()
+        session_user.roles = []
+        session_user.organization_id = None
+        save_to_db(session_user)
         org_trn = 'test_trn_2'
-        assert UserDB.query().filter_by(auth0_id=session_user_auth0_id).first() is None
         invalid_org_data = {
             'trn': org_trn,
             'name': 'test_name_2',
@@ -193,7 +198,7 @@ class TestOrganizations:
                                        url=get_endpoint(parameterized_endpoint=ENDPOINT_ORGANIZATIONS),
                                        json=invalid_org_data)
         assert response.status_code == HTTP_UNPROCESSABLE_ENTITY_STATUS_CODE
-        assert response.json()['error']['message'] == "Domains don't match"
+        assert response.json()['error']['message'] == "Organization and user email domain do not match"
         db_commit_and_expire()
         assert OrganizationDB.get_from_id(id_value=org_trn) is None
         #####################################################

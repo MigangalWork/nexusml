@@ -43,14 +43,14 @@ class TestAuth0Manager:
             Test initialization without a provided token.
 
             Mocks:
-                - Mocks the `set_header` method of Auth0Manager.
+                - Mocks the `update_authorization_header` method of Auth0Manager.
 
             Asserts:
-                - Ensures `set_header` is called during initialization without a token.
+                - Ensures `update_authorization_header` is called during initialization without a token.
             """
-            mock_set_header = mocker.patch.object(Auth0Manager, 'set_header')
+            mock_update_authorization_header = mocker.patch.object(Auth0Manager, 'update_authorization_header')
             Auth0Manager()
-            mock_set_header.assert_called_once()
+            mock_update_authorization_header.assert_called_once()
 
     class TestSetHeader:
         """Tests for the set_header method of Auth0Manager."""

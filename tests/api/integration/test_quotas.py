@@ -4,7 +4,7 @@ import jwt
 import pytest
 
 from nexusml.api.resources.organizations import Organization
-from nexusml.constants import ADMIN_ROLE
+from nexusml.constants import ADMIN_ROLE, ENDPOINT_USERS
 from nexusml.constants import ENDPOINT_MYACCOUNT
 from nexusml.constants import ENDPOINT_ORGANIZATION
 from nexusml.constants import ENDPOINT_TASKS
@@ -65,19 +65,17 @@ class TestQuotas:
         pass
 
     def test_users_limit(self, mocker, mock_request_responses, client: MockClient):
-        mocker.patch('nexusml.api.views.myaccount.agent_from_token', side_effect=jwt.InvalidTokenError())
-        mocker.patch('nexusml.api.views.myaccount.get_auth0_management_api_token', return_value=MagicMock())
-        mock_user_invitation = MagicMock()
-        mock_user_invitation.organization_id = 1
-        mocker.patch('nexusml.api.views.myaccount.MyAccountView._get_user_invitation', return_value=MagicMock())
+        # mocker.patch('nexusml.api.views.myaccount.agent_from_token', side_effect=jwt.InvalidTokenError())
+        # mock_user_invitation = MagicMock()
+        # mock_user_invitation.organization_id = 1
 
-        user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
-            RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(RoleDB.name == ADMIN_ROLE,).first()
-        mock_query = MagicMock()
-        mock_query.join.return_value.join.return_value.filter.return_value.first.return_value = user_db_obj
-        mocker.patch('nexusml.api.views.myaccount.UserDB.query', return_value=mock_query)
-        mocker.patch('nexusml.api.resources.organizations.User.download_auth0_user_data',
-                     side_effect=lambda auth0_id_or_email: None if '@' in str(auth0_id_or_email) else MagicMock())
+        # user_db_obj: UserDB = UserDB.query().join(user_roles, user_roles.c.user_id == UserDB.user_id).join(
+        #     RoleDB, user_roles.c.role_id == RoleDB.role_id).filter(RoleDB.name == ADMIN_ROLE,).first()
+        # mock_query = MagicMock()
+        # mock_query.join.return_value.join.return_value.filter.return_value.first.return_value = user_db_obj
+        # mocker.patch('nexusml.api.views.myaccount.UserDB.query', return_value=mock_query)
+        # mocker.patch('nexusml.api.resources.organizations.User.download_auth0_user_data',
+        #              side_effect=lambda auth0_id_or_email: None if '@' in str(auth0_id_or_email) else MagicMock())
 
         _test_org_quota_limit(client=client, quota='users', request_json={'email': 'extra_user@testorg.com'})
 
@@ -128,10 +126,9 @@ def _test_org_quota_limit(client: MockClient, quota: str, request_json: dict):
         endpoint_url = org_endpoint + '/' + dsp_name
 
     if dsp_name == 'users':
-        endpoint_url = get_endpoint(parameterized_endpoint=ENDPOINT_MYACCOUNT)
-        response = client.send_request(method='GET', url=endpoint_url, json=request_json)
-    else:
-        response = client.send_request(method='POST', url=endpoint_url, json=request_json)
+        endpoint_url = get_endpoint(parameterized_endpoint=ENDPOINT_USERS)
+
+    response = client.send_request(method='POST', url=endpoint_url, json=request_json)
 
     # Verify response and database
     assert response.status_code == HTTP_UNPROCESSABLE_ENTITY_STATUS_CODE
