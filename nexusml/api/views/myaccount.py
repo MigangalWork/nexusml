@@ -144,7 +144,7 @@ class MyAccountView(_MyAccountView):
         if existing_user_db_obj:
             raise DuplicateResourceError(f'User already exists')
 
-        user_email: str = g.token['email']
+        user_email: str = kwargs['email']
         user_invitation: InvitationDB = InvitationDB.query().filter_by(email=user_email,
                                                                        status=InviteStatus.PENDING).first()
 
