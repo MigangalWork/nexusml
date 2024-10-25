@@ -199,12 +199,83 @@ AUTH0_DOMAIN=your-auth0-domain
       }
     };
     ```
+7. Save the action by clicking on **Deploy**.
+   
+### 3. Create an Action to save the user in your local database
+
+1. Click on **Triggers** under **Actions**.
+2. Select **post-user-registration**.
+3. In the menu on the right side, beside **Add Action**, click on the **+** icon and select **Build from scratch**.
+4. Name your action (e.g., "Create Local User") and select the recommended Node.js version under **Runtime**.
+5. Introduce the following secrets:
+      - `NEXUSML_ACTIONS_CLIENT_ID`: The Client ID used for Auth0 Actions.
+      - `NEXUSML_ACTIONS_DOMAIN`: Your Auth0 domain (e.g., `https://your-domain.auth0.com`).
+      - `NEXUSML_ACTIONS_CLIENT_SECRET`: The Client Secret used for Auth0 Actions.
+      - `NEXUSML_API_DOMAIN`: Your API domain to make the POST call to save the user.
+
+6. Add the following JavaScript code to the action script:
+
+   ```javascript
+       /**
+         * Handler that will be called during the execution of a PostUserRegistration flow.
+        *
+        * @param {Event} event - Details about the context and user that has registered.
+        * @param {PostUserRegistrationAPI} api - Methods and utilities to help change the behavior after a signup.
+        */
+
+       const axios = require('axios');
+
+       exports.onExecutePostUserRegistration = async (event, api) => {
+        let auth_token;
+
+        const tokenOptions = {
+          method: 'POST',
+          url: `https://${event.secrets.ACTIONS_DOMAIN}/oauth/token`,
+          headers: { 'content-type': 'application/json' },
+          data: {
+            grant_type: 'client_credentials',
+            client_id: event.secrets.CLIENT_ID,
+            client_secret: event.secrets.CLIENT_SECRET,
+            audience: `https://${event.secrets.ACTIONS_DOMAIN}/api/v2/`
+          }
+        };
+        try {
+          const res = await axios.request(tokenOptions);
+          console.log('Access Token: ', res.data.access_token);
+          auth_token = res.data.access_token;
+
+          // Cache the token with a timeout
+          api.cache.set('sf_access_token', auth_token, { ttl: 3600 });
+        } catch (error) {
+          console.error('Error fetching token:', error);
+          return;
+        }
+
+        // Make the request to save the user
+        const saveUser = {
+       method: 'POST',
+       url: `https://${event.secrets.API_URL}/v0/myaccount`,
+       headers: {
+         'Authorization': `Bearer ${auth_token}`,
+         'content-type': 'application/json'
+       }
+       };
+
+        try {
+          await axios.request(saveUser);
+        } catch (error) {
+          console.error('Error saving user:', error);
+        }
+       };
+   ```
 
 7. Save the action by clicking on **Deploy**.
 
-### 3. Attach the Action to the Login Flow
+### 3. Attach the Actions to the Login Flow and User Registration Flow
 
 1. Go to **Triggers** under **Actions** and select **post-login**.
 2. Drag and drop the newly created action under **Custom** section, "Assign Role on Login", into the flow, ideally 
    right after the user logs in.
 3. Save the flow by clicking **Apply**.
+4. Repeat the steps, but this time select **post-user-registration** instead of **post-login** in step 1, 
+and choose "Create Local User" instead of "Assign Role on Login."
