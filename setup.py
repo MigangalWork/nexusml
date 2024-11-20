@@ -8,6 +8,10 @@ import os
 from setuptools import setup, find_packages
 
 # Set basic information
+
+from Cython.Build import cythonize
+
+# Define your package metadata
 _NAME = 'nexusml'
 _VERSION = '0.1.0'
 _AUTHOR = 'Neuraptic AI'
@@ -28,6 +32,16 @@ if __name__ == '__main__':
     # Read API requirements
     with open(os.path.join('requirements', 'api-requirements.txt')) as f:
         api_requirements = f.read().splitlines()
+
+    # Add Cython support
+    cython_extensions = cythonize(
+        "nexusml/**/*.py",  # Cythonize all Python files in the `nexusml` package
+        compiler_directives={
+            "language_level": "3",  # Use Python 3 syntax
+            "boundscheck": False,   # Disable bounds checking for better performance
+            "wraparound": False     # Disable negative indexing
+        }
+    )
 
     # Setup
     setup(
@@ -51,5 +65,7 @@ if __name__ == '__main__':
             'console_scripts': [
                 'nexusml-server = nexusml.cli:run_server'
             ]
-        }
+        },
+        ext_modules=cython_extensions,  # Add Cython extensions
+        zip_safe=False  # Ensures compatibility with compiled extensions
     )
