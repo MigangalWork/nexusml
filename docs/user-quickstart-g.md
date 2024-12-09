@@ -1,40 +1,34 @@
 # **NexusML API Quickstart Guide: From Task Creation to Prediction**
 
-This guide provided a step-by-step walkthrough of using the NexusML API—from task creation to making predictions. By following these steps, you can define, train, and deploy custom AI models tailored to your specific needs. For more advanced usage or troubleshooting, refer to the NexusML API Documentation. Happy modeling!
+This guide provides a step-by-step walkthrough of using the NexusML API—from task creation to making predictions. By following these steps, you can define, train, and deploy custom AI models tailored to your needs. For more advanced usage or troubleshooting, refer to the NexusML API Documentation.
 
 ---
 
 ## **1. Create a Task**
 
-The first step is to define the problem you want to solve by creating a **task**. Each **task** is based on a predefined template that aligns with specific types of AI problems, such as classification, regression, or detection. These templates act as blueprints for structuring your task's schema. For example, a task using the "IMAGE_CLASSIFICATION" template would be structured to accept labeled image data and produce category predictions. When creating a task, you also define its metadata, including a name, description, and an optional icon to help organize tasks within your system.
+Define the problem you want to solve by creating a **task**. Each task is based on a predefined template aligned with specific AI problems like classification, regression, or detection. Templates provide a blueprint for the task's schema.
 
 ### **Available Task Templates**
-Each task template corresponds to a specific type of problem:
+Each template corresponds to a specific AI problem type:
 
-- **IMAGE_CLASSIFICATION (0):** Image classification.
-- **IMAGE_REGRESSION (1):** Image regression.
-- **OBJECT_DETECTION (2):** Object detection.
-- **OBJECT_SEGMENTATION (3):** Object segmentation.
-- **TEXT_CLASSIFICATION (4):** Text classification.
-- **TEXT_REGRESSION (5):** Text regression.
-- **AUDIO_CLASSIFICATION (6):** Audio classification.
-- **AUDIO_REGRESSION (7):** Audio regression.
-- **TABULAR_CLASSIFICATION (8):** Tabular classification.
-- **TABULAR_REGRESSION (9):** Tabular regression.
-- **MULTIMODAL_CLASSIFICATION (10):** Multimodal classification.
-- **MULTIMODAL_REGRESSION (11):** Multimodal regression.
+- **IMAGE_CLASSIFICATION (0):** Image classification
+- **IMAGE_REGRESSION (1):** Image regression
+- **OBJECT_DETECTION (2):** Object detection
+- **OBJECT_SEGMENTATION (3):** Object segmentation
+- **TEXT_CLASSIFICATION (4):** Text classification
+- **TEXT_REGRESSION (5):** Text regression
+- **AUDIO_CLASSIFICATION (6):** Audio classification
+- **AUDIO_REGRESSION (7):** Audio regression
+- **TABULAR_CLASSIFICATION (8):** Tabular classification
+- **TABULAR_REGRESSION (9):** Tabular regression
+- **MULTIMODAL_CLASSIFICATION (10):** Multimodal classification
+- **MULTIMODAL_REGRESSION (11):** Multimodal regression
 
 ### Request
-To make the request use:
-
 **POST** `/tasks`
 
-You will have to provide a name, a description of the model, an icon and a selected template or a type.
-Templates are the usual way to go, it includes the basic inputs and outputs for each case. If you want to create a
-task outside the templates or you need to create the task and later add the inputs and outputs you can choose send the
-type instead of a template.
+Provide the task name, description, icon, and either a template or a type. Using templates is recommended, as they include pre-defined inputs and outputs. If opting for a type, you'll need to define inputs and outputs later.
 
-Note: All templates have a defined type. Do not send a template and a type or the request will fail.
 ```json
 {
   "name": "<string>",
@@ -43,11 +37,11 @@ Note: All templates have a defined type. Do not send a template and a type or th
   "template": "object_segmentation",
   "type": "<string>"
 }
+
 ```
 ### Response
 
-The response contains details about the created task. Use the id or uuid for subsequent requests.
-
+The response includes details about the created task, including the id or uuid for subsequent requests.
 ```json
 {
   "address": "<string>",
@@ -78,10 +72,13 @@ The response contains details about the created task. Use the id or uuid for sub
 
 ## 2. Add Inputs, Outputs and metadata
 
-After creating a task, if you chose a template inputs and outputs are already defined. You can add metadata to the task.
-In case you only chose a type, you need to specify its schema now, which consists of inputs and outputs. 
-Inputs are the data you’ll provide to the model (e.g., images, text, or audio), 
-while outputs represent what the model will predict (e.g., categories, numerical values, or structured outputs). 
+If you selected a template, inputs and outputs are predefined. Otherwise, you need to define the task schema, specifying:
+
+- **Inputs**: Data you’ll provide (e.g., images, text, or audio).
+- **Outputs**: Predictions the model will produce (e.g., categories or numerical values).
+- **Metadata**: Additional descriptive information.
+
+
 Defining the schema involves specifying the data types, constraints (e.g., required or nullable), 
 and whether multiple values are supported. For example, you can define an input as an "image_file" to handle images 
 or as "text" to process textual data. This step ensures the task schema is flexible yet precise enough to handle 
@@ -89,32 +86,32 @@ the requirements of your AI solution.
 
 ### Request
 
-To add input output or metadatada the request is the same, only changing the las direction you are pointing to.
+To add input output or metadata the request is the same, only changing the las direction you are pointing to.
 
-POST /task/<task_id>/schema/[input|outputs|metadata]
+**POST** `/task/<task_id>/schema/[input|outputs|metadata]`
 
 The data needed it is also the same in the three cases. The main data you need to send is the name,
 the type of data that must be one of the following list:
-- Boolean (boolean)
-- Integer (integer)
-- Float (float)
-- Text (text)
-- Datetime (datetime)
-- Category (category)
-- Generic file (generic_file)
-- Document file (document_file)
-- Audio file (audio_file)
-- Shape (shape)
-- Slice (slice)
+- Boolean (`boolean`)
+- Integer (`integer`)
+- Float (`float`)
+- Text (`text`)
+- Datetime (`datetime`)
+- Category (`category`)
+- Generic file (`generic_file`)
+- Document file (`document_file`)
+- Audio file (`audio_file`)
+- Shape (`shape`)
+- Slice (`slice`)
 
-In case of multi value data, multivalue description must be one fof the folling options:
-- Unordered (unordered): For unordered data like, 
-- Ordered (ordered): For ordered data like,
-- Time based (time_based): For time based data like,
+In case of multi-value data, multi-value description must be one fof the following options:
+- Unordered (`unordered`): For unordered data like, 
+- Ordered (`ordered`): For ordered data like,
+- Time based (`time_based`): For time based data like,
 
-You have also define if this data is nullable or required.
+You have to also define if this data is nullable or required.
 
-### Payload Example
+### Payload
 ```json
 {
   "name": "<string>",
@@ -142,12 +139,14 @@ an image file as input and a label specifying the correct category.
 This step is crucial because the quality and diversity of examples directly 
 impact the model's performance. By organizing examples into batches, 
 you can efficiently upload large datasets.
-Each task have a space limit (default 50mb). If you need more space contact with 
+
+    Note: Each task have a space limit (default 50mb). If you need more space contact with Neuraptic.
+
 ### Request
 
-To add examples to your model you have to make this request:
+To add examples to your model make the following POST call:
 
-POST `/examples`
+**POST** `/examples`
 
 The example will require to have all the required inputs, outputs and metadata the schema you
 chose define or the ones you added manually.
@@ -203,7 +202,7 @@ To do this first make a call to:
 POST `/tasks/files`
 
 In this post you will send the file metadata. Specify what this file will be used for `ai_model`,
-`input`, `output`, `metadata` or `picture`. Then define the type of file, the available options are `document`, `image`, `video`, and `audio`
+`input`, `output`, `metadata` or `picture`. Then define the type of file, the available options are `document`, `image`, `video`, and `audio`.
 
 ### Payload
 
@@ -223,7 +222,7 @@ In this post you will send the file metadata. Specify what this file will be use
 
 ### Response
 
-You will reciece the file data, including the URL where you will have to upload your file
+You will reciece the file data, including the URL where you will have to upload your file.
 
 ```json
 {
@@ -307,7 +306,7 @@ To make a prediction call the specific task prediction endpoint:
 Just send all the required input data. Remember that to send files you have to send the file ID of the 
 uploaded file to S3 and not the file itself.
 ### Payload
-```
+```json
 {
   "batch": [
     {
@@ -326,7 +325,7 @@ uploaded file to S3 and not the file itself.
 ```
 ### Response
 You will receive the output defined in the schema with the predicted values.
-```
+```json
 {
   "ai_model": "<string>",
   "predictions": [

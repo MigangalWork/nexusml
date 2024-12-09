@@ -94,8 +94,8 @@ _category_url_params = paging_url_params(collection_name='categories')
 
 class TasksView(_TasksView):
 
-    @doc(tags=[SWAGGER_TAG_TASKS], description='WARNING: results will be paginated in the near future')
-    @marshal_with(TaskResponse(many=True))
+    @doc(tags=[SWAGGER_TAG_TASKS], description='WARNING: results will be paginated in the near future --')
+    @marshal_with(TaskResponse(many=True), code=200) # TODO: Check this many=True
     def get(self) -> Response:
         """
         Retrieves a list of tasks accessible to the current session agent based on their organization and permissions.
@@ -252,9 +252,21 @@ class TasksView(_TasksView):
         # Merge user-accessible and role-accessible tasks
         return _return_tasks(session_agent=session_agent, db_objects=user_accessible.union(role_accessible))
 
-    @doc(tags=[SWAGGER_TAG_TASKS])
-    @use_kwargs(TaskPOSTRequest, location='json')
-    @marshal_with(TaskResponse)
+    @doc(tags=[SWAGGER_TAG_TASKS], description='Creates a new task')
+    @use_kwargs(TaskPOSTRequest, location='json', description='Task templates must be one of the following schemas: '
+        'IMAGE_CLASSIFICATION (0): Represents an image classification task schema template.'
+        'IMAGE_REGRESSION (1): Represents an image regression task schema template.'
+        'OBJECT_DETECTION (2): Represents an object detection task schema template.'
+        'OBJECT_SEGMENTATION (3): Represents an object segmentation task schema template.'
+        'TEXT_CLASSIFICATION (4): Represents a text classification task schema template.'
+        'TEXT_REGRESSION (5): Represents a text regression task schema template.'
+        'AUDIO_CLASSIFICATION (6): Represents an audio classification task schema template.'
+        'AUDIO_REGRESSION (7): Represents an audio regression task schema template.'
+        'TABULAR_CLASSIFICATION (8): Represents a tabular classification task schema template.'
+        'TABULAR_REGRESSION (9): Represents a tabular regression task schema template.'
+        'MULTIMODAL_CLASSIFICATION (10): Represents a multimodal classification task schema template.'
+        'MULTIMODAL_REGRESSION (11): Represents a multimodal regression task schema template.')
+    @marshal_with(TaskResponse, code=200, description='The created task details')
     def post(self, **kwargs) -> Response:
         """
         Creates a new task.
@@ -273,8 +285,8 @@ class TasksView(_TasksView):
 
 class TaskView(_TaskView):
 
-    @doc(tags=[SWAGGER_TAG_TASKS])
-    @marshal_with(TaskResponse)
+    @doc(tags=[SWAGGER_TAG_TASKS], description='Retrieves the details of a task.')
+    @marshal_with(TaskResponse, code=200)
     def get(self, task_id: str, resources: List[Resource]) -> Response:
         """
         Retrieves the details of a task.

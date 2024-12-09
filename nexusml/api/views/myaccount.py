@@ -165,7 +165,21 @@ class MyAccountView(_MyAccountView):
 
         return new_user
 
-    @doc(tags=[SWAGGER_TAG_MYACCOUNT])
+    @doc(tags=[SWAGGER_TAG_MYACCOUNT],
+         parameters={
+             "task_id": {"description": "The ID of the task for training.", "in": "path", "type": "string"},
+             "resources": {"description": "The list of resources related to the task.", "in": "json", "type": "array"},
+         },
+         responses={
+             202: {
+                 "description": "Training request successfully accepted.",
+                 "schema": {},
+             },
+             422: {
+                 "description": "Unprocessable request due to validation errors.",
+             },
+         },
+         )
     def delete(self):
         """
         Handle DELETE request to remove user account.
@@ -192,9 +206,10 @@ class MyAccountView(_MyAccountView):
         response.headers['Location'] = user.url()
         return response
 
-    @doc(tags=[SWAGGER_TAG_MYACCOUNT])
-    @use_kwargs(UserUpdateSchema, location='json')
-    @marshal_with(UserResponseSchema)
+    @doc(tags=[SWAGGER_TAG_MYACCOUNT], description='Update user account information using a JSON payload.',
+         responses={400: {'description': 'Invalid response'}})
+    @use_kwargs(UserUpdateSchema, location='json', description='Users first and last name')
+    @marshal_with(UserResponseSchema, code=200, description='User data correctly updated')
     def put(self, **kwargs):
         """
         Handle PUT request to update user account data.
@@ -220,7 +235,7 @@ class SettingsView(_MyAccountView):
     """
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT], description='Returns a JSON with user settings')
-    @marshal_with(SettingsSchema)
+    @marshal_with(SettingsSchema, code=200, description='User settings data')
     def get(self):
         """
         Handle GET request to retrieve user settings.
@@ -234,8 +249,8 @@ class SettingsView(_MyAccountView):
         return response_json
 
     @doc(tags=[SWAGGER_TAG_MYACCOUNT], description='Update user settings from a JSON')
-    @use_kwargs(SettingsSchema, location='json')
-    @marshal_with(SettingsSchema)
+    @use_kwargs(SettingsSchema, location='json', description='User settings to be updated')
+    @marshal_with(SettingsSchema, code=200, description='Updated user settings')
     def put(self, **kwargs):
         """
         Handle PUT request to update user settings.
@@ -337,8 +352,9 @@ class NotificationsView(_MyAccountView):
     View for handling notifications related requests, including retrieving and deleting notifications.
     """
 
-    @doc(tags=[SWAGGER_TAG_MYACCOUNT])
-    @use_kwargs(_notifications_query_params, location='query')
+    @doc(tags=[SWAGGER_TAG_MYACCOUNT], description='Delete notification by its `UUID`')
+    @use_kwargs(_notifications_query_params, location='query', description='Notification id of the notification to be '
+                                                                           'deleted')
     def delete(self, **kwargs):
         """
         Handle DELETE request to remove notifications based on query parameters.
