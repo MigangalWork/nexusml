@@ -3,14 +3,12 @@
 # Operating data
 
 ## Active tasks
-You may want to check your currect active tasks. 
-You will recivece a list of all active task you have. 
+You may want to check your current active tasks. To do this, make the appropriate call, and you will receive a list of all the active tasks you have, providing an overview of their status and details.
 
 ### Request
-
 **GET** `/tasks`
 
-#### Response
+### Response
 
 ```json
 {
@@ -69,37 +67,45 @@ You will recivece a list of all active task you have.
 
 ## Delete a task
 
-In order to delete a task just call the DELETE `/tasks/<task_id>`. For security reasons
-there is no way to delete all tasks in one call, so you have to delete them one by one.
+For security reasons there is no way to delete all tasks in one call, so you have to delete them one by one.
+
+### Request
+In order to delete a task just call the:
+
+DELETE `/tasks/<task_id>`.
+
+Replace `<task_id>` with the ID of the task for which you want to delete.
 
 ## Update a task
+The only updatable task values are the `description`, `icon`, and `name`. The schema itself cannot be updated directly. If you need to update the schema for a task, you will have to create a new task with the desired schema changes.
 
-To update a task, the endpoint 
+## Request
+To update a task, call the endpoint:
 
 PUT `/tasks/<task_id>` 
 
-must be called. The only updateble task values here are,
-the description, icon and name. The schema can not be updated, in order to update a schema from a task you will
-need to create a new task.
+Replace `<task_id>` with the ID of the task for which you want to update.
 
-## Import and export model
 
-If you are working locally and have a trained model you want to export or import you can do it
-using:
+## Import and Export Model
 
-GET/POST `/tasks/models`
+If you're working locally and need to export or import a trained model, you can do so using the following endpoint:
 
-### GET Request
+**GET/POST** `/tasks/models`
 
-You can get a list of all models using
+### Export model
+
+To retrieve a list of all models, use the following endpoint:
 
 **GET** `/tasks/models`
 
-or a specific model data using
+To fetch data for a specific model, use:
 
 **GET** `/tasks/models/<model_id>`
 
-in this case the response will be:
+### Response
+In this case, the response will include detailed information about the model, as shown below:
+
 ```json
 {
   "created_at": "<string>",
@@ -127,20 +133,31 @@ in this case the response will be:
         "description": "File use: \"ai_model\" | \"input\" | \"output\" | \"metadata\" | \"picture\""
       },
       "uuid": "<string>",
-      "download_url": "<string>",
-      "type": {
-        "description": "File type: \"document\" | \"image\" | \"video\" | \"audio\"",
-        "nullable": true
-      },
-      "upload_url": {
-        "url": "<string>",
-        "fields": {}
-      }
-    },
+      "download_url": "<string>"
+    }
+  }
+}
+```
+
+### Import model
+
+To upload a model call the following endpoint:
+
+**POST** `/tasks/models`
+
+You will need to provide the Docker image information, along with details about the training device, training time, and any additional metadata you wish to include.
+### Payload
+
+```json
+{
+  "docker_image": {
+    "file": "<string>",
     "id": "<string>",
     "repository": "<string>",
     "tag": "<string>"
   },
+  "training_device": "gpu",
+  "training_time": "<number>",
   "extra_metadata": {}
 }
 ```
