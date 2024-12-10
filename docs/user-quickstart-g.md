@@ -41,7 +41,7 @@ Provide the task name, description, icon, and either a template or a type. Using
 ```
 ### Response
 
-The response includes details about the created task, including the id or uuid for subsequent requests.
+The response includes details about the created task, including the `id` or `uuid` for subsequent requests.
 ```json
 {
   "address": "<string>",
@@ -78,6 +78,7 @@ If you selected a template, inputs and outputs are predefined. Otherwise, you ne
 - **Outputs**: Predictions the model will produce (e.g., categories or numerical values).
 - **Metadata**: Additional descriptive information.
 
+You can also add additional inputs and outputs at your discretion.
 
 Defining the schema involves specifying the data types, constraints (e.g., required or nullable), 
 and whether multiple values are supported. For example, you can define an input as an "image_file" to handle images 
@@ -86,12 +87,12 @@ the requirements of your AI solution.
 
 ### Request
 
-To add input output or metadata the request is the same, only changing the las direction you are pointing to.
+To add inputs, outputs, or metadata, the process remains the same; you only need to adjust the final direction you're pointing to.
 
 **POST** `/task/<task_id>/schema/[input|outputs|metadata]`
 
-The data needed it is also the same in the three cases. The main data you need to send is the name,
-the type of data that must be one of the following list:
+The required data is the same for all three cases. The primary information you need to provide includes the name and the data type, 
+which must be one of the following:
 - Boolean (`boolean`)
 - Integer (`integer`)
 - Float (`float`)
@@ -104,12 +105,12 @@ the type of data that must be one of the following list:
 - Shape (`shape`)
 - Slice (`slice`)
 
-In case of multi-value data, multi-value description must be one fof the following options:
-- Unordered (`unordered`): For unordered data like, 
-- Ordered (`ordered`): For ordered data like,
-- Time based (`time_based`): For time based data like,
+For multi-value data, you must specify a multi-value description, which should be one of the following options:
+- Unordered (`unordered`): For data where the order does not matter, such as a list of tags or categories. 
+- Ordered (`ordered`): For data where the order is significant, such as a sequence of steps or rankings.
+- Time based (`time_based`): For data organized chronologically, such as a series of timestamps or events.
 
-You have to also define if this data is nullable or required.
+You must also specify whether the data is **nullable** or **required**. 
 
 ### Payload
 ```json
@@ -148,11 +149,9 @@ To add examples to your model make the following POST call:
 
 **POST** `/examples`
 
-The example will require to have all the required inputs, outputs and metadata the schema you
-chose define or the ones you added manually.
+The example must include all required inputs, outputs, and metadata as defined by the schema you selected or those you manually added.
 
-For files and shapes you will add the file or shape ID in the value description. If the example
-is labeled, add the elements tags here too.
+For files and shapes, include the file or shape ID in the value description. If the example is labeled, also include the element's tags in this section.
 
 ### Payload
 ```json
@@ -191,17 +190,15 @@ the files during both training and prediction phases. Each file is assigned an I
 which you reference in your schema and examples. Proper organization and uploading
 of files are critical to maintain consistency and avoid data mismatches.
 
-To do that you will
-have to first send the file metadata to the API. Then the API will send you a URL where
-you will POST your file to be saved.
+To accomplish this, you must first send the file metadata to the API. The API will then return a URL, which you will use to POST your file for storage.
 
 ### Request
 
-To do this first make a call to:
+o do this, first make a call to the following endpoint:
 
 POST `/tasks/files`
 
-In this post you will send the file metadata. Specify what this file will be used for `ai_model`,
+In this POST request, you will send the file metadata. Specify what this file will be used for `ai_model`,
 `input`, `output`, `metadata` or `picture`. Then define the type of file, the available options are `document`, `image`, `video`, and `audio`.
 
 ### Payload
@@ -222,8 +219,7 @@ In this post you will send the file metadata. Specify what this file will be use
 
 ### Response
 
-You will reciece the file data, including the URL where you will have to upload your file.
-
+You will receive the file data in response, including the URL where you need to upload your file. Use this URL to POST the actual file for storage.
 ```json
 {
   "created_at": "<string>",
@@ -251,7 +247,7 @@ You will reciece the file data, including the URL where you will have to upload 
 }
 ```
 
-Under `upload_url/url` you will  find the URL to upload your file.
+Under the `upload_url/url` field, you will find the URL where you need to upload your file. Use this URL to POST the file for storage.
 
 ## 4. Train the Model
 
@@ -261,28 +257,31 @@ outputs according to the task’s defined structure.
 For example, in a text classification task, the model might predict a category 
 like "positive" or "negative" for each input text. This step is where the model's
 learned knowledge is applied to solve real-world problems. 
-You can batch predictions to process multiple inputs efficiently in a single 
-API call.
+
 
 ### Request
 
-To make a train just make this call to a specific task:
+To initiate training, simply make the following call to the specific task:
 
 POST `/task/<task_id>/train`
 
-    Note: Training may take time. TO ENAIA: Ensure you have sufficient credits if required.
+Replace `<task_id>` with the ID of the task you want to train.
+
+    Note: Training may take some time. Ensure you have sufficient credits available if required.
 
 ## 5. Deployment
 
-Once the model is trained, you must deploy it. You can deploy the model to test or production.
+Once the model is trained, you must deploy it. You can choose to deploy the model to either a test or production environment, depending on your needs.
 
 ### Request
 
-To deploy the model get the model ID and then call:
+To deploy the model, first obtain the model ID, and then make the following call:
 
 **POST** `task/deployment/<model_id>`
 
-You will have to specify the ai model and chose if you want to deploy to `production` or `testing`.
+Replace `<model_id>` with the ID of the model you wish to deploy.
+
+When deploying the model, you will need to specify the AI model and choose whether you want to deploy it to `production` or `testing`.
 
 ### Payload
 ```json
@@ -293,18 +292,83 @@ You will have to specify the ai model and chose if you want to deploy to `produc
   }
 }
 ```
+
+## 5. Test the model
+
+Before executing your model in production, you may want to test it. Use the models deployed to the testing environment for this purpose. Note that you can only test the most recent model uploaded to the testing environment.
+
+Once you have tested the model and are satisfied with its performance, you can deploy it to production by following the steps outlined earlier.
+### Request
+To test a model make a call to:
+
+POST `/tasks/<task_id>/test`
+
+Replace `<task_id>` with the ID of the task for which you want to make the prediction test.
+
+
+### Payload
+```json
+{
+  "batch": [
+    {
+      "values": [
+        {
+          "element": "<string>",
+          "value": {
+            "description": "Input/Metadata value. For files, provide the ID",
+            "nullable": true
+          }
+        }
+      ],
+      "targets": [
+        {
+          "element": "<string>",
+          "value": {
+            "description": "Target value. For files, provide the ID",
+            "nullable": true
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+### Response
+You will receive the output defined in the schema, which will include the predicted values based on the input data you provided.
+
+```json
+{
+  "ai_model": "<string>",
+  "predictions": [
+    {
+      "outputs": [
+        {
+          "element": "<string>",
+          "value": {
+            "description": "Predicted value. Categorical values include category and scores:\n{\n\t\"category\": \"class_1\",\n\t\"scores\": {\n\t\t\"class_1\": <class_1_score>,\n\t\t\"class_2\": <class_2_score>\n\t}\n}",
+            "nullable": true
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 ## 5. Make Predictions
 
-Use the trained model in production to make predictions. You just need to send the input values and the current
-model in production will be used. If there is no trained model in production aan error will be returned.
+To use the trained model in production for making predictions, simply send the input values. 
+The current model in production will be used to generate predictions. If no trained model is available in production, an error will be returned.
 
 ### Request
-To make a prediction call the specific task prediction endpoint:
+To make a prediction, call the specific task prediction endpoint:
 
 **POST** `/tasks/<task_id>/predict`
 
-Just send all the required input data. Remember that to send files you have to send the file ID of the 
-uploaded file to S3 and not the file itself.
+Replace `<task_id>` with the ID of the task for which you want to make the prediction.
+
+To make the prediction, simply send all the required input data. 
+Remember that when sending files, you need to send the file ID of the uploaded file to S3, not the file itself.
+
 ### Payload
 ```json
 {
@@ -324,7 +388,8 @@ uploaded file to S3 and not the file itself.
 }
 ```
 ### Response
-You will receive the output defined in the schema with the predicted values.
+You will receive the output defined in the schema, which will include the predicted values based on the input data you provided.
+
 ```json
 {
   "ai_model": "<string>",
@@ -343,3 +408,4 @@ You will receive the output defined in the schema with the predicted values.
   ]
 }
 ```
+With this, you now have the foundational knowledge to initialize, train, and deploy an AI model on our platform. You are equipped to prepare your data, manage model training, handle file uploads, and make predictions once the model is deployed. Additionally, you understand how to work with different environments (test or production) and how to manage the model lifecycle, ensuring smooth transitions from training to deployment and real-time usage.
